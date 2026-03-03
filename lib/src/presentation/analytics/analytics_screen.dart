@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../domain/entities/task.dart';
+import '../widgets/demo_notice_banner.dart';
+import '../widgets/section_header.dart';
 
 class AnalyticsScreen extends ConsumerWidget {
   const AnalyticsScreen({super.key});
@@ -21,13 +23,45 @@ class AnalyticsScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              _StatCard(title: 'Completion rate', value: '${stats.completionRate}%'),
+              const DemoNoticeBanner(padding: EdgeInsets.only(bottom: 12)),
+              const SectionHeader(
+                title: 'Progress insights',
+                subtitle: 'Track momentum and stay ahead of your goals.',
+                icon: Icons.insights,
+                gradient: [
+                  Color(0xFF6D5BFF),
+                  Color(0xFF9A6BFF),
+                  Color(0xFFDA8BFF),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _StatCard(
+                title: 'Completion rate',
+                value: '${stats.completionRate}%',
+                icon: Icons.stacked_line_chart,
+                gradient: const [Color(0xFF5B6CFF), Color(0xFF8A7CFF)],
+              ),
               const SizedBox(height: 12),
-              _StatCard(title: 'Current streak', value: '${stats.currentStreak} days'),
+              _StatCard(
+                title: 'Current streak',
+                value: '${stats.currentStreak} days',
+                icon: Icons.local_fire_department,
+                gradient: const [Color(0xFFFF8C6B), Color(0xFFFFB36B)],
+              ),
               const SizedBox(height: 12),
-              _StatCard(title: 'Monthly tasks', value: '${stats.monthlyTasks}'),
+              _StatCard(
+                title: 'Monthly tasks',
+                value: '${stats.monthlyTasks}',
+                icon: Icons.calendar_month,
+                gradient: const [Color(0xFF37A97A), Color(0xFF6EDC9D)],
+              ),
               const SizedBox(height: 12),
-              _StatCard(title: 'Most productive category', value: stats.topCategory),
+              _StatCard(
+                title: 'Top category',
+                value: stats.topCategory,
+                icon: Icons.star_rounded,
+                gradient: const [Color(0xFF2EC4FF), Color(0xFF6EDCFF)],
+              ),
             ],
           );
         },
@@ -39,24 +73,69 @@ class AnalyticsScreen extends ConsumerWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({required this.title, required this.value});
+  const _StatCard({
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.gradient,
+  });
 
   final String title;
   final String value;
+  final IconData icon;
+  final List<Color> gradient;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Text(value, style: Theme.of(context).textTheme.headlineSmall),
-          ],
-        ),
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradient),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: gradient.last.withOpacity(0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

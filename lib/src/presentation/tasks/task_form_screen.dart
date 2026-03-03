@@ -8,6 +8,8 @@ import '../../core/extensions/date_time_x.dart';
 import '../../domain/entities/task.dart';
 import '../../domain/entities/task_category.dart';
 import '../../domain/entities/task_priority.dart';
+import '../widgets/demo_notice_banner.dart';
+import '../widgets/section_header.dart';
 
 class TaskFormScreen extends ConsumerStatefulWidget {
   const TaskFormScreen({super.key, this.taskId});
@@ -100,51 +102,86 @@ class _TaskFormScreenState extends ConsumerState<TaskFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            TextFormField(
-              controller: _titleController,
-              decoration: const InputDecoration(labelText: 'Title'),
-              validator: (value) =>
-                  value == null || value.isEmpty ? 'Enter a title' : null,
+            const DemoNoticeBanner(padding: EdgeInsets.only(bottom: 12)),
+            SectionHeader(
+              title: isEditing ? 'Refine your task' : 'Capture a new task',
+              subtitle: isEditing
+                  ? 'Adjust the details to keep momentum.'
+                  : 'Add context so every block lands perfectly.',
+              icon: Icons.edit_note,
+              gradient: const [
+                Color(0xFF2EC4FF),
+                Color(0xFF5B6CFF),
+                Color(0xFF7F5CFF),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _descriptionController,
-              maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Description'),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _titleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Title',
+                        prefixIcon: Icon(Icons.title),
+                      ),
+                      validator: (value) =>
+                          value == null || value.isEmpty ? 'Enter a title' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _descriptionController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                        prefixIcon: Icon(Icons.notes),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<TaskCategory>(
+                      value: _category,
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        prefixIcon: Icon(Icons.category),
+                      ),
+                      items: TaskCategory.values
+                          .map((category) => DropdownMenuItem(
+                                value: category,
+                                child: Text(category.name),
+                              ))
+                          .toList(),
+                      onChanged: (value) => setState(() => _category = value!),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<TaskPriority>(
+                      value: _priority,
+                      decoration: const InputDecoration(
+                        labelText: 'Priority',
+                        prefixIcon: Icon(Icons.flag),
+                      ),
+                      items: TaskPriority.values
+                          .map((priority) => DropdownMenuItem(
+                                value: priority,
+                                child: Text(priority.name),
+                              ))
+                          .toList(),
+                      onChanged: (value) => setState(() => _priority = value!),
+                    ),
+                    const SizedBox(height: 12),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Deadline'),
+                      subtitle: Text(_dueAt.formatShort()),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: _pickDueDate,
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<TaskCategory>(
-              value: _category,
-              decoration: const InputDecoration(labelText: 'Category'),
-              items: TaskCategory.values
-                  .map((category) => DropdownMenuItem(
-                        value: category,
-                        child: Text(category.name),
-                      ))
-                  .toList(),
-              onChanged: (value) => setState(() => _category = value!),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<TaskPriority>(
-              value: _priority,
-              decoration: const InputDecoration(labelText: 'Priority'),
-              items: TaskPriority.values
-                  .map((priority) => DropdownMenuItem(
-                        value: priority,
-                        child: Text(priority.name),
-                      ))
-                  .toList(),
-              onChanged: (value) => setState(() => _priority = value!),
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Deadline'),
-              subtitle: Text(_dueAt.formatShort()),
-              trailing: const Icon(Icons.calendar_today),
-              onTap: _pickDueDate,
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             FilledButton(
               onPressed: () async {
                 if (!_formKey.currentState!.validate()) return;

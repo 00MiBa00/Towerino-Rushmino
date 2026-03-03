@@ -53,12 +53,12 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCGdBLsluWrpzPIjNgyLyUlHIQn-BjpJFc',
-    appId: '1:155885034489:ios:1ff3bf7639d0c6a05dfb28',
-    messagingSenderId: '155885034489',
-    projectId: 'cash--n--emotion',
-    storageBucket: 'cash--n--emotion.firebasestorage.app',
-    iosBundleId: 'com.cash-nemotion.nemotion-cash',
+    apiKey: 'AIzaSyDnxeI2KYqzow4vyKYlRqHnWS3cuq9uEto',
+    appId: '1:693747967012:ios:6df3ee9ff43fe8f021e4b1',
+    messagingSenderId: '693747967012',
+    projectId: 'towerino-rushmino',
+    storageBucket: 'towerino-rushmino.firebasestorage.app',
+    iosBundleId: 'com.crossworthlimited.secondapp',
   );
 
 }

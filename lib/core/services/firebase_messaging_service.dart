@@ -25,11 +25,8 @@ class FirebaseMessagingService {
     // Init local notifications service
     _localNotificationsService = localNotificationsService;
 
-    // Handle FCM token
+    // Handle FCM token (permission must already be granted before calling init())
     var token = await _handlePushNotificationsToken();
-
-    // Request user permission for notifications
-    _requestPermission();
 
     // Register handler for background messages (app terminated)
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);

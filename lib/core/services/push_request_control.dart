@@ -42,46 +42,43 @@ class PushRequestControl {
   static bool isDebug = kDebugMode;
 
   static bool shouldShowPushRequest(PushRequestData data) {
-    // Проверяем, получено ли согласие на уведомления
+    // Check whether notification consent was granted
     final pushAccepted = data.pushNotificationAccepted;
     final firstDeclinedAt = data.pushDeclinedAt;
 
-    // Если пользователь уже дал согласие, не показываем запрос
+    // If the user already granted consent, do not show the prompt
     if (pushAccepted == true) {
       if (isDebug) print("pushAccepted == true");
       return false;
     }
 
-    // Если согласие не было получено и отказ не фиксировался, показываем запрос впервые
-    if (pushAccepted == null && firstDeclinedAt == null) {
-      if (isDebug) print("pushAccepted == null && firstDeclinedAt == null");
+    // If consent was not granted and no decline was recorded, show the prompt
+    if (pushAccepted == null && (firstDeclinedAt == null || firstDeclinedAt.isEmpty)) {
+      if (isDebug) print("pushAccepted == null && firstDeclinedAt == null/empty");
       return true;
     }
 
-    // Если согласие не было получено, но есть дата первого отказа
-    if (pushAccepted == false && firstDeclinedAt != null) {
-      if (isDebug) print("pushAccepted == false && firstDeclinedAt != null");
-      DateTime? declinedAt;
+    // If declined — check whether 3 days have passed since last decline
+    final declinedAtStr = firstDeclinedAt ?? "";
+    if (declinedAtStr.isNotEmpty) {
+      if (isDebug) print("checking 3-day cooldown, declinedAt=$declinedAtStr");
+      DateTime declinedAt;
       try {
-        declinedAt = DateTime.parse(firstDeclinedAt);
+        declinedAt = DateTime.parse(declinedAtStr);
       } catch (e) {
-        if (isDebug) print("catch");
+        if (isDebug) print("parse error — show screen");
         return true;
       }
-      final now = DateTime.now();
-
-      if (now.difference(declinedAt).inDays >= 3) {
-        return true;
-      }
-
-      return false;
+      final daysPassed = DateTime.now().difference(declinedAt).inDays;
+      if (isDebug) print("daysPassed=$daysPassed");
+      return daysPassed >= 3;
     }
 
-    // Прочие случаи -- не показываем запрос
+    // Other cases: do not show the prompt
     return false;
   }
 
-  // Метод для сохранения согласия пользователя на push-уведомления
+  // Save the user's consent for push notifications
   static void acceptPushRequest(PushRequestData data) async {
     data.pushNotificationAccepted = true;
     data.pushDeclinedAt = "";
@@ -92,7 +89,7 @@ class PushRequestControl {
     }
   }
 
-  // Метод для сохранения отказа пользователя от push-уведомлений
+  // Save the user's decline for push notifications
   static void declinePushRequest(PushRequestData data, [DateTime? date]) {
     date ??= DateTime.now(); //.subtract(const Duration(days: 4));
     data.pushNotificationAccepted = false;

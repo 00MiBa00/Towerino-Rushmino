@@ -5,15 +5,15 @@ import 'package:flutter/cupertino.dart';
 class AppConfig {
 //========================= App Serrings =========================//
 
-  static const String appsFlyerDevKey = 'ZxzZYPbN93maktCtrRZtw8';
-  static const String appsFlyerAppId = '6755145892'; // Для iOS'
-  static const String bundleId = 'com.cash-nemotion.nemotion-cash'; // Для iOS'
-  static const String locale = 'en'; // Для iOS'
-  static const String os = 'iOS'; // Для iOS'
-  static const String endpoint = 'https://cashnemotion.com'; // Для iOS'
+  static const String appsFlyerDevKey = 'DBcqaNUMCZhe88uHz6ThQX';
+  static const String appsFlyerAppId = '6759960020'; // iOS
+  static const String bundleId = 'com.crossworthlimited.secondapp'; // iOS
+  static const String locale = 'en'; // iOS
+  static const String os = 'iOS'; // iOS
+  static const String endpoint = 'https://towerinorushmino.com'; // iOS
 
   static const String logoPath = 'assets/images/Logo.png';
-  static const String pushRequestLogoPath = 'assets/images/Logo2.png';
+  static const String pushRequestLogoPath = 'assets/images/Logo.png';
 
   static const String pushRequestBackgroundPath =
       'assets/images/SplashBackground.png';
@@ -26,7 +26,7 @@ class AppConfig {
 
   //========================= Splash Screen ====================//
   static const Decoration splashDecoration = const BoxDecoration(
-    //закоментировать если не нужен градиент
+    // Comment out if gradient is not needed
     gradient: LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -36,7 +36,7 @@ class AppConfig {
       ],
     ),
 
-    //закоментировать если не нужен фон из изображения
+    // Comment out if image background is not needed
     image: DecorationImage(
       image: AssetImage(AppConfig.splashBackgroundPath),
       fit: BoxFit.cover,
@@ -49,7 +49,7 @@ class AppConfig {
   //========================= Push Request Screen ====================//
 
   static const Decoration pushRequestDecoration = const BoxDecoration(
-    //закоментировать если не нужен градиент
+    // Comment out if gradient is not needed
     gradient: LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -59,7 +59,7 @@ class AppConfig {
       ],
     ),
 
-    //закоментировать если не нужен фон из изображения
+    // Comment out if image background is not needed
     image: DecorationImage(
       image: AssetImage(AppConfig.pushRequestBackgroundPath),
       fit: BoxFit.cover,
@@ -84,7 +84,7 @@ class AppConfig {
 
   //========================= Error Screen ====================//
   static const Decoration errorScreenDecoration = const BoxDecoration(
-    //закоментировать если не нужен градиент
+    // Comment out if gradient is not needed
     gradient: LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -94,7 +94,7 @@ class AppConfig {
       ],
     ),
 
-    //закоментировать если не нужен фон из изображения
+    // Comment out if image background is not needed
     image: DecorationImage(
       image: AssetImage(AppConfig.errorBackgroundPath),
       fit: BoxFit.cover,

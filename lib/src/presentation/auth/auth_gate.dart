@@ -13,15 +13,23 @@ class AuthGate extends ConsumerStatefulWidget {
 }
 
 class _AuthGateState extends ConsumerState<AuthGate> {
+  late final ProviderSubscription _authStateSub;
+
   @override
   void initState() {
     super.initState();
-    ref.listen(authStateProvider, (previous, next) {
+    _authStateSub = ref.listenManual(authStateProvider, (previous, next) {
       final user = next.valueOrNull;
       if (user != null) {
         ref.read(taskRepositoryProvider).syncFromRemote();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _authStateSub.close();
+    super.dispose();
   }
 
   @override

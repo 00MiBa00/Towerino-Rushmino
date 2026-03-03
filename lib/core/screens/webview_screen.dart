@@ -25,7 +25,7 @@ class UrlLauncherService {
       final Uri uri = Uri.parse(url);
 
       // if (!await canLaunchUrl(uri)) {
-      //   //  _showErrorSnackbar(context, 'Не удалось открыть ссылку');
+      //   //  _showErrorSnackbar(context, 'Failed to open the link');
       //   return;
       // }
 
@@ -34,7 +34,7 @@ class UrlLauncherService {
         mode: LaunchMode.externalApplication,
       );
     } catch (e) {
-      // _showErrorSnackbar(context, 'Ошибка: $e');
+      // _showErrorSnackbar(context, 'Error: $e');
     }
   }
 
@@ -94,7 +94,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   void initState() {
     super.initState();
 
-    // Проверяем, есть ли сохраненная ссылка в хранилище
+    // Check if there is a saved link in storage
     String? savedUrl = SdkInitializer.receivedUrl;
     String urlToLoad = savedUrl ?? widget.initialUrl;
     if (SdkInitializer.pushURL != null) {
@@ -127,17 +127,17 @@ class _WebViewScreenState extends State<WebViewScreen> {
           ..setOnPageFinished((String url) {
             setState(() async {
               await controller.runJavaScript('''
-    // Сохраняем оригинальную функцию
+    // Preserve the original function
     var originalWindowOpen = window.open;
     
-    // Переопределяем window.open
+    // Override window.open
     window.open = function(url, target, features) {
-      // Всегда открываем в текущей вкладке
+      // Always open in the current tab
       window.location.href = url;
       return null;
     };
     
-    // Также обрабатываем ссылки с target="_blank"
+    // Also handle links with target="_blank"
     document.addEventListener('click', function(e) {
       var target = e.target;
       while (target && target.nodeName !== 'A') {
@@ -224,7 +224,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
     //controller.getSettings().setMediaPlaybackRequiresUserGesture(false);
 
-    // Создаем контроллер WebView
+    // Create the WebView controller
     // controller = PlatformWebViewController(
     //   WebKitWebViewControllerCreationParams(allowsInlineMediaPlayback: true),
     // );
@@ -240,7 +240,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     //     ..setOnPageStarted((String url) {})
     //     ..setOnPageFinished((String url) {})
     //     ..setOnWebResourceError((WebResourceError error) {
-    //       // print('Ошибка WebView: ${error.description}');
+    //       // print('WebView error: ${error.description}');
     //     })
     //     ..loadRequest(Uri.parse(urlToLoad));
     // });

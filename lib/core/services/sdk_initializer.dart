@@ -24,11 +24,11 @@ class SdkInitializer {
   static BuildContext? _context;
   static AppsflyerSdk? _appsflyerSdk;
 
-  // Хранилище для переменных во время выполнения приложения
+  // Runtime storage for variables during app execution
   static final Map<String, dynamic> _runtimeStorage = {};
   static Map<String, dynamic> _convrtsion = {};
 
-  // Геттеры для удобного доступа к часто используемым переменным
+  // Getters for quick access to common variables
   static String? receivedUrl;
   static String? pushURL;
   static String? get conversionData =>
@@ -43,17 +43,17 @@ class SdkInitializer {
   static String deep_link_sub1 = "";
   static String deep_link_value = "";
 
-  /// Сохраняет содержимое _runtimeStorage в строку JSON
+  /// Saves _runtimeStorage contents as a JSON string
   static String saveRuntimeStorage() {
     try {
       return json.encode(_runtimeStorage);
     } catch (e) {
-      //  print('Ошибка при сохранении _runtimeStorage: $e');
+      //  print('Error saving _runtimeStorage: $e');
       return '{}';
     }
   }
 
-  /// Загружает содержимое JSON-строки в _runtimeStorage (старые значения перезаписываются)
+  /// Loads JSON string into _runtimeStorage (overwrites old values)
   static void loadRuntimeStorage(String jsonString) {
     try {
       Map<String, dynamic> map = json.decode(jsonString);
@@ -61,11 +61,11 @@ class SdkInitializer {
         ..clear()
         ..addAll(map);
     } catch (e) {
-      // print('Ошибка при загрузке _runtimeStorage: $e');
+      // print('Error loading _runtimeStorage: $e');
     }
   }
 
-  // Методы для работы с хранилищем
+  // Storage helper methods
   static void setValue(String key, dynamic value) {
     _runtimeStorage[key] = value;
     saveRuntimeStorageToDevice();
@@ -78,21 +78,27 @@ class SdkInitializer {
       //  print("save data $jsonString");
     } catch (e) {
       if (kDebugMode) {
-        print('Ошибка при сохранении runtimeStorage на девайсе: $e');
+        print('Error saving runtimeStorage on device: $e');
       }
     }
   }
 
   static Future<void> loadRuntimeStorageToDevice() async {
     try {
-      var json = await prefs!.getString('runtimeStorage');
-      loadRuntimeStorage(json!);
-      if (kDebugMode) {
-        print('runtimeStorage успешно загружен');
+      final json = prefs?.getString('runtimeStorage');
+      if (json != null && json.isNotEmpty) {
+        loadRuntimeStorage(json);
+        if (kDebugMode) {
+          print('runtimeStorage loaded successfully');
+        }
+      } else {
+        if (kDebugMode) {
+          print('runtimeStorage is empty (first launch)');
+        }
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Ошибка при сохранении runtimeStorage на девайсе: $e');
+        print('Error loading runtimeStorage on device: $e');
       }
     }
   }
@@ -142,6 +148,22 @@ class SdkInitializer {
     } on PlatformException catch (e) {
       if (kDebugMode) {
         print("Failed to call Swift method: '${e.message}'");
+      }
+    }
+  }
+
+  /// Requests App Tracking Transparency permission (iOS 14+).
+  /// Must be called after the first Flutter frame is drawn.
+  static Future<void> _requestATT() async {
+    try {
+      final status =
+          await AppTrackingTransparency.requestTrackingAuthorization();
+      if (kDebugMode) {
+        print('ATT status: $status');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('ATT error: $e');
       }
     }
   }
@@ -199,11 +221,8 @@ class SdkInitializer {
       return;
     }
 
-    // WidgetsFlutterBinding.ensureInitialized().addPostFrameCallback((_) async {
-    //   final status =
-    //       await AppTrackingTransparency.requestTrackingAuthorization();
-    // });
-    //initAppsFlyer();
+    // First launch: start AppsFlyer to get conversion data and navigate.
+    initAppsFlyer();
   }
 
   static Future<void> _firebaseMessagingBackgroundHandler(
@@ -272,14 +291,14 @@ class SdkInitializer {
     setValue("Organic", false);
     setValue("isFirstStart", true);
 
-    // Сохраняем полный ответ сервера
+    // Save full server response
     setValue('serverResponse', url);
 
     //print(mapToJsonString(map));
 
     // print("url: " + url);
 
-    // Сохраняем полученную ссылку в хранилище
+    // Save received URL to storage
     receivedUrl = url;
     setValue('urlReceivedAt', DateTime.now().toIso8601String());
     if (kDebugMode) {
@@ -483,13 +502,13 @@ class SdkInitializer {
     // );
   }
 
-  /// Запрашивает APNS токен через FirebaseMessaging
+  /// Requests APNS token via FirebaseMessaging
   static Future<String?> requestAPNSToken() async {
     try {
-      // Запрашиваем разрешение на пуш-уведомления (для iOS запрос обязателен)
+      // Request push notification permission (required on iOS)
       await FirebaseMessaging.instance.requestPermission();
 
-      // Убеждаемся, что FCM token получен (это запустит регистрацию и выдачу APNS токена на iOS)
+      // Ensure FCM token is obtained (triggers APNS token on iOS)
       var token = await FirebaseMessaging.instance.getAPNSToken();
       if (kDebugMode) {
         print("first token");
@@ -502,24 +521,24 @@ class SdkInitializer {
       }
       String? apnsToken;
       int retries = 10;
-      // Ждём пока APNS токен не станет доступен
+      // Wait for APNS token to become available
       for (int i = 0; i < retries; i++) {
         apnsToken = await FirebaseMessaging.instance.getAPNSToken();
         if (apnsToken != null && apnsToken.isNotEmpty) {
           if (kDebugMode) {
-            print('APNS токен получен: $apnsToken');
+            print('APNS token received: $apnsToken');
           }
           return apnsToken;
         }
         await Future.delayed(const Duration(milliseconds: 500));
       }
       if (kDebugMode) {
-        print('APNS токен не получен (timeout)');
+        print('APNS token not received (timeout)');
       }
       return null;
     } catch (e) {
       if (kDebugMode) {
-        print('Ошибка при получении APNS токена: $e');
+        print('Error getting APNS token: $e');
       }
       return null;
     }
@@ -529,7 +548,7 @@ class SdkInitializer {
     return false;
     if (!Platform.isIOS) return false;
 
-    // Проверяем переменные окружения симулятора
+    // Check simulator environment variables
     return Platform.environment.containsKey('SIMULATOR_DEVICE_NAME') ||
         Platform.environment.containsKey('SIMULATOR_HOST_HOME') ||
         Platform.environment.containsKey('SIMULATOR_UDID');
@@ -537,6 +556,19 @@ class SdkInitializer {
 
   static Future<void> pushRequest(BuildContext context) async {
     await Firebase.initializeApp();
+
+    // User tapped "Yes" on our custom screen — now request ATT first,
+    // then the system push notification permission.
+    await _requestATT();
+
+    final settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    if (kDebugMode) {
+      print('Push permission status: ${settings.authorizationStatus}');
+    }
 
     var token = await FirebaseMessagingService.InitPushAndGetToken();
     if (token == null) {
@@ -617,7 +649,7 @@ Map<String, dynamic> parseJsonFromString(String jsonString) {
   if (kDebugMode) {
     print("2 " + cleanedString);
   }
-  // Парсим JSON строку в Map
+  // Parse JSON string into Map
   Map<String, dynamic> jsonMap = jsonDecode(cleanedString);
 
   // print("3 " + jsonMap.length.toString());
@@ -626,12 +658,12 @@ Map<String, dynamic> parseJsonFromString(String jsonString) {
 
 String mapToJsonString(Map<String, dynamic> map) {
   try {
-    // Преобразуем Map в JSON строку с красивым форматированием
+    // Convert Map to JSON string with formatting
     String jsonString = json.encode(map);
     return jsonString;
   } catch (e) {
     if (kDebugMode) {
-      print('Ошибка преобразования в JSON: $e');
+      print('Error converting to JSON: $e');
     }
     return '{}';
   }
@@ -647,25 +679,25 @@ Future<Map<String, dynamic>?> sendPostRequest({
     print(body);
   }
   try {
-    // Подготавливаем заголовки
+    // Prepare headers
     Map<String, String> requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       ...?headers,
     };
 
-    // Отправляем POST запрос
+    // Send POST request
     http.Response response = await http
         .post(Uri.parse(url), headers: requestHeaders, body: json.encode(body))
         .timeout(timeout);
 
-    // Проверяем статус ответа
+    // Check response status
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      // Успешный ответ
+      // Success response
       Map<String, dynamic> result = json.decode(response.body);
       return result;
     } else {
-      // Ошибка HTTP
+      // HTTP error
       if (kDebugMode) {
         print('HTTP Error: ${response.statusCode} - ${response.body}');
       }
@@ -673,32 +705,32 @@ Future<Map<String, dynamic>?> sendPostRequest({
     }
   } catch (e) {
     if (kDebugMode) {
-      print('Ошибка запроса: $e');
+      print('Request error: $e');
     }
     return null;
   }
 }
 
 class EventBus {
-  // Контроллер для событий
+  // Event controller
   final _controller = StreamController<dynamic>.broadcast();
 
   // Singleton instance
   static final EventBus instance = EventBus();
 
-  // Приватный конструктор (если хотите запретить создание экземпляров)
-  // EventBus._(); // или просто не объявляйте public конструктор
+  // Private constructor (if you want to prevent instantiation)
+  // EventBus._(); // or just don't declare a public constructor
 
-  // Поток событий
+  // Event stream
   Stream<dynamic> get events => _controller.stream;
 
-  // Отправка события
+  // Emit event
   void fire(dynamic event) {
     print(event);
     _controller.add(event);
   }
 
-  // Закрытие
+  // Dispose
   void dispose() {
     _controller.close();
   }

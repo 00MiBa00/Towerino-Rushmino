@@ -56,6 +56,14 @@ final settingsServiceProvider = FutureProvider<SettingsService>((ref) async {
   return SettingsService(prefs);
 });
 
+final demoModeProvider = Provider<bool>((ref) {
+  final settingsAsync = ref.watch(settingsServiceProvider);
+  return settingsAsync.maybeWhen(
+    data: (settings) => settings.demoDataEnabled,
+    orElse: () => false,
+  );
+});
+
 final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authRepositoryProvider).authStateChanges();
 });
