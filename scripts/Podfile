@@ -31,19 +31,16 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
   target 'RunnerTests' do
     inherit! :search_paths
   end
-end
 
-  # If you have an app extension (e.g. notifications), declare it as a nested target
-  # so CocoaPods knows the host target. This ensures proper pod installation for
-  # embedded targets like extensions.
+  # Nested so it shares host target pods and avoids duplicate GoogleUtilities
   target 'notifications' do
-    use_frameworks!
     inherit! :search_paths
-    pod 'Firebase/Messaging'
   end
+end
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
