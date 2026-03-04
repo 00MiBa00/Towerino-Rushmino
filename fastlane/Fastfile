@@ -159,31 +159,26 @@ desc "Sync codesigning certificates for Build"
     sh("flutter build ios --release --no-codesign --build-number=#{safe_build_number} --no-tree-shake-icons")
 
     # ── Step 2 ────────────────────────────────────────────────────────────────
-    # Patch Pods.xcodeproj to fix two known archive-time collisions:
+    # Patch Pods.xcodeproj to fix "Multiple commands produce" archive errors.
     #
-    # A) Duplicate GoogleUtilities targets:
-    #    Runner (Firebase/Analytics) and notifications (Firebase/Messaging)
-    #    get different GoogleUtilities pod targets (different hash suffixes).
-    #    Both have SKIP_INSTALL=NO → both try to copy GoogleUtilities.framework
-    #    to the archive → "Multiple commands produce" error.
-    #    Fix: SKIP_INSTALL=YES on every native target that is a direct dep of
-    #    Pods-notifications but NOT of Pods-Runner.
+    # CocoaPods creates two GoogleUtilities native targets with different hash
+    # suffixes (e.g. -54d832b6 and -7cacef58) when the subspec sets differ
+    # between Runner's Analytics path and its Messaging path. Both targets are
+    # in Runner's dependency graph (Runner uses firebase_messaging too), so the
+    # set-difference approach (notif_only − runner_only) yields an empty set
+    # and finds nothing to patch.
     #
-    # B) BoringSSL-GRPC 'Create Symlinks to Header Folders' script:
-    #    This script has no declared outputs so Xcode re-runs it on every
-    #    build. During archive the BUILT_PRODUCTS_DIR changes and the `ln`
-    #    command can fail, causing ARCHIVE FAILED.
-    #    Fix: replace the script body with a no-op echo.
+    # Better strategy: group all native targets by the product filename they
+    # produce. Any filename claimed by 2+ targets is a duplicate. Keep one
+    # (alphabetically first) and set SKIP_INSTALL=YES on the rest.
     begin
       require 'xcodeproj'
     rescue LoadError => load_err
-      UI.important("[dedup-fix] xcodeproj gem not loadable (#{load_err.message}) — skipping Pods.xcodeproj patch")
+      UI.important("[dedup-fix] xcodeproj gem not loadable: #{load_err.message} — skipping")
     end
 
     if defined?(Xcodeproj)
       begin
-        require 'set'
-
         pods_proj_path = File.expand_path("../ios/Pods/Pods.xcodeproj", __dir__)
         unless File.exist?(pods_proj_path)
           UI.important("[dedup-fix] Pods.xcodeproj not found at #{pods_proj_path} — skipping")
@@ -191,58 +186,38 @@ desc "Sync codesigning certificates for Build"
           pods_proj = Xcodeproj::Project.open(pods_proj_path)
           changed   = false
 
-          # ── A: GoogleUtilities SKIP_INSTALL ──────────────────────────────
-          runner_agg = pods_proj.targets.find { |t| t.name == 'Pods-Runner' }
-          notif_agg  = pods_proj.targets.find { |t| t.name == 'Pods-notifications' }
-
-          if runner_agg && notif_agg
-            runner_direct = Set.new((runner_agg.dependencies || []).map { |d| d.target&.name }.compact)
-            notif_direct  = Set.new((notif_agg.dependencies  || []).map { |d| d.target&.name }.compact)
-            notif_only    = notif_direct - runner_direct
-
-            UI.message("[dedup-fix] Pods-Runner direct deps (#{runner_direct.size}): #{runner_direct.to_a.sort.first(8).inspect}")
-            UI.message("[dedup-fix] Pods-notifications direct deps (#{notif_direct.size}): #{notif_direct.to_a.sort.inspect}")
-            UI.message("[dedup-fix] notif_only SKIP_INSTALL candidates: #{notif_only.to_a.sort.inspect}")
-
-            notif_only_bundles = Set.new
-            pods_proj.native_targets.each do |t|
-              fw = t.product_reference&.path
-              next unless fw&.end_with?('.bundle')
-              notif_only_bundles.add(t.name) if notif_only.any? { |parent| t.name.start_with?(parent) }
-            end
-
-            skip_targets = notif_only + notif_only_bundles
-            pods_proj.native_targets.each do |t|
-              next unless skip_targets.include?(t.name)
-              t.build_configurations.each { |c| c.build_settings['SKIP_INSTALL'] = 'YES' }
-              UI.message("[dedup-fix] SKIP_INSTALL=YES on '#{t.name}'")
-              changed = true
-            end
-
-            UI.message("[dedup-fix] GoogleUtilities fix: #{changed ? 'applied' : 'no matching targets found'}")
-          else
-            UI.important("[dedup-fix] Pods-Runner=#{runner_agg&.name.inspect} Pods-notifications=#{notif_agg&.name.inspect} — aggregate targets not found")
+          # Group native targets by the filename of the product they produce.
+          by_product = {}
+          pods_proj.native_targets.each do |t|
+            next unless t.product_reference
+            pname = t.product_reference.path.to_s
+            next if pname.empty?
+            (by_product[pname] ||= []) << t
           end
 
-          # ── B: BoringSSL-GRPC symlink script no-op ───────────────────────
-          boring = pods_proj.native_targets.find { |t| t.name == 'BoringSSL-GRPC' }
-          if boring
-            boring.build_phases.each do |phase|
-              next unless phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
-              next unless phase.name == 'Create Symlinks to Header Folders'
-              phase.shell_script = 'echo "[dedup-fix] skipped Create Symlinks to Header Folders"'
-              UI.message("[dedup-fix] Patched BoringSSL-GRPC 'Create Symlinks to Header Folders' → no-op")
+          UI.message("[dedup-fix] #{pods_proj.native_targets.size} native targets, #{by_product.size} unique product filenames")
+
+          by_product.each do |product_name, targets|
+            next if targets.size < 2
+            sorted = targets.sort_by(&:name)
+            keeper = sorted.first
+            dupes  = sorted[1..]
+            UI.message("[dedup-fix] Duplicate '#{product_name}' (#{targets.size} targets):")
+            UI.message("[dedup-fix]   KEEP         #{keeper.name}")
+            dupes.each do |t|
+              t.build_configurations.each { |c| c.build_settings['SKIP_INSTALL'] = 'YES' }
+              UI.message("[dedup-fix]   SKIP_INSTALL #{t.name}")
               changed = true
             end
-          else
-            UI.message("[dedup-fix] BoringSSL-GRPC target not found (may be OK)")
           end
 
           if changed
             pods_proj.save
             UI.message("[dedup-fix] Pods.xcodeproj saved")
+            # Shell-verify so the result is visible in CI logs regardless of log routing
+            sh("grep -c 'SKIP_INSTALL' 'ios/Pods/Pods.xcodeproj/project.pbxproj' | xargs -I{} echo '[dedup-fix] SKIP_INSTALL occurrences in pbxproj: {}'")
           else
-            UI.message("[dedup-fix] Pods.xcodeproj — no changes written")
+            UI.message("[dedup-fix] No duplicate products found — nothing to patch")
           end
         end
       rescue => e
