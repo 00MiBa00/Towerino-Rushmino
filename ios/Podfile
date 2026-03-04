@@ -38,26 +38,32 @@ target 'Runner' do
 end
 
 # Notifications extension: sibling of Runner.
-# Firebase/Messaging is declared here so the extension can link FirebaseMessaging.
-# The post_install hook below removes shared transitive deps (e.g. GoogleUtilities)
-# from Pods-notifications to prevent Xcode "Multiple commands produce" errors.
+# DO NOT declare pod 'Firebase/Messaging' here — doing so causes CocoaPods to
+# create a SECOND GoogleUtilities pod target (with a different hash suffix, e.g.
+# GoogleUtilities-54d832b6 vs GoogleUtilities-7cacef58) that produces an
+# identically-named GoogleUtilities.framework at the same archive output path,
+# triggering Xcode 16 "Multiple commands produce" during archive.
+#
+# Instead the extension inherits Runner's pod search paths (FRAMEWORK_SEARCH_PATHS
+# / HEADER_SEARCH_PATHS) via `inherit! :search_paths`, and the post_install hook
+# below injects the required OTHER_LDFLAGS into the generated xcconfig files so
+# the extension can link against FirebaseMessaging from Runner's build products.
 target 'notifications' do
   use_frameworks!
   inherit! :search_paths
-  pod 'Firebase/Messaging'
 end
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-    
+
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
       # Fix CreateUniversalBinary failure on Apple Silicon Macs:
       # simulator only needs arm64, not a fat arm64+x86_64 binary.
       config.build_settings['ONLY_ACTIVE_ARCH'] = 'YES' if config.name == 'Debug'
     end
-    
+
     if target.name == 'notifications'
       target.build_configurations.each do |config|
         config.build_settings['APPLICATION_EXTENSION_API_ONLY'] = 'YES'
@@ -66,21 +72,44 @@ post_install do |installer|
     end
   end
 
-  # Fix: Prevent "Multiple commands produce GoogleUtilities*" in Xcode 16+
-  # when notifications is a sibling of Runner. Both Pods-Runner and Pods-notifications
-  # transitively depend on GoogleUtilities, causing duplicate build outputs during archive.
-  # Solution: remove from Pods-notifications any target dependencies already covered
-  # by Pods-Runner — they will be provided by the host app at runtime.
+  # Fix: Inject FirebaseMessaging linker flags into the notifications xcconfig files.
+  # Because we do NOT declare `pod 'Firebase/Messaging'` for the notifications target
+  # (to avoid a duplicate GoogleUtilities pod target), CocoaPods does not generate
+  # OTHER_LDFLAGS for that target. We patch the generated xcconfig files directly
+  # so the extension can link against FirebaseMessaging (and its transitive deps)
+  # that Runner already builds and embeds in Runner.app/Frameworks.
+  # The extension finds all frameworks at runtime via @executable_path/../../Frameworks.
   begin
-    notif_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-notifications' }
-    runner_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-Runner' }
-    if notif_agg && runner_agg
-      runner_dep_names = runner_agg.dependencies.map { |d| d.target.name }
-      shared_deps = notif_agg.dependencies.select { |d| runner_dep_names.include?(d.target.name) }
-      shared_deps.each { |d| d.remove_from_project }
-      installer.pods_project.save unless shared_deps.empty?
+    firebase_ldflags = [
+      '-lsqlite3', '-lz',
+      '-framework "CoreTelephony"',
+      '-framework "FBLPromises"',
+      '-framework "FirebaseCore"',
+      '-framework "FirebaseCoreInternal"',
+      '-framework "FirebaseInstallations"',
+      '-framework "FirebaseMessaging"',
+      '-framework "Foundation"',
+      '-framework "GoogleDataTransport"',
+      '-framework "GoogleUtilities"',
+      '-framework "Security"',
+      '-framework "SystemConfiguration"',
+      '-framework "UIKit"',
+      '-framework "nanopb"',
+      '-weak_framework "UserNotifications"',
+    ].join(' ')
+
+    pods_root = installer.sandbox.root.to_s
+    %w[Debug Profile Release].each do |cfg|
+      xcconfig_path = "#{pods_root}/Target Support Files/Pods-notifications/Pods-notifications.#{cfg.downcase}.xcconfig"
+      next unless File.exist?(xcconfig_path)
+      content = File.read(xcconfig_path)
+      unless content.include?('firebase_ldflags_injected')
+        content += "\n# firebase_ldflags_injected\nOTHER_LDFLAGS = $(inherited) #{firebase_ldflags}\n"
+        File.write(xcconfig_path, content)
+        puts "[fix] Injected FirebaseMessaging ldflags into Pods-notifications.#{cfg.downcase}.xcconfig"
+      end
     end
   rescue => e
-    puts "Warning: Pods deduplication: #{e.message}"
+    puts "Warning: xcconfig ldflags injection failed: #{e.message}"
   end
 end

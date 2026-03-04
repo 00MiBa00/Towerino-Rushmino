@@ -37,20 +37,23 @@ target 'Runner' do
   end
 end
 
+# Notifications extension: sibling of Runner.
+# DO NOT declare pod 'Firebase/Messaging' here — doing so causes CocoaPods to
+# create a SECOND GoogleUtilities pod target that triggers Xcode 16
+# "Multiple commands produce" during archive. See ios/Podfile for details.
 target 'notifications' do
   use_frameworks!
   inherit! :search_paths
-  pod 'Firebase/Messaging'
 end
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-    
+
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
     end
-    
+
     if target.name == 'notifications'
       target.build_configurations.each do |config|
         config.build_settings['APPLICATION_EXTENSION_API_ONLY'] = 'YES'
@@ -60,15 +63,35 @@ post_install do |installer|
   end
 
   begin
-    notif_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-notifications' }
-    runner_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-Runner' }
-    if notif_agg && runner_agg
-      runner_dep_names = runner_agg.dependencies.map { |d| d.target.name }
-      shared_deps = notif_agg.dependencies.select { |d| runner_dep_names.include?(d.target.name) }
-      shared_deps.each { |d| d.remove_from_project }
-      installer.pods_project.save unless shared_deps.empty?
+    firebase_ldflags = [
+      '-lsqlite3', '-lz',
+      '-framework "CoreTelephony"',
+      '-framework "FBLPromises"',
+      '-framework "FirebaseCore"',
+      '-framework "FirebaseCoreInternal"',
+      '-framework "FirebaseInstallations"',
+      '-framework "FirebaseMessaging"',
+      '-framework "Foundation"',
+      '-framework "GoogleDataTransport"',
+      '-framework "GoogleUtilities"',
+      '-framework "Security"',
+      '-framework "SystemConfiguration"',
+      '-framework "UIKit"',
+      '-framework "nanopb"',
+      '-weak_framework "UserNotifications"',
+    ].join(' ')
+
+    pods_root = installer.sandbox.root.to_s
+    %w[Debug Profile Release].each do |cfg|
+      xcconfig_path = "#{pods_root}/Target Support Files/Pods-notifications/Pods-notifications.#{cfg.downcase}.xcconfig"
+      next unless File.exist?(xcconfig_path)
+      content = File.read(xcconfig_path)
+      unless content.include?('firebase_ldflags_injected')
+        content += "\n# firebase_ldflags_injected\nOTHER_LDFLAGS = $(inherited) #{firebase_ldflags}\n"
+        File.write(xcconfig_path, content)
+      end
     end
   rescue => e
-    puts "Warning: Pods deduplication: #{e.message}"
+    puts "Warning: xcconfig ldflags injection failed: #{e.message}"
   end
 end
