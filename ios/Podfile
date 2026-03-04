@@ -60,44 +60,55 @@ post_install do |installer|
     end
   end
 
-  # Fix "Multiple commands produce GoogleUtilities.framework" during Xcode archive.
+  # Fix "Multiple commands produce GoogleUtilities.framework/GoogleUtilities_Privacy.bundle"
+  # during Xcode archive.
   #
-  # When pod 'Firebase/Messaging' is declared in the notifications extension target,
-  # CocoaPods creates a second GoogleUtilities pod target with a different hash suffix
-  # (e.g. GoogleUtilities-54d832b6 alongside GoogleUtilities-7cacef58 for Runner).
-  # Both are dynamic frameworks named GoogleUtilities.framework. During archive, Xcode
-  # stages framework outputs in UninstalledProducts — both write to the same path and
-  # fail with "Multiple commands produce".
+  # Both Pods-Runner and Pods-notifications pull in GoogleUtilities, but CocoaPods creates
+  # two separate targets with different hash suffixes (different subspec combinations):
+  #   GoogleUtilities-7cacef58 → used by Pods-Runner (via FirebaseAnalytics etc.)
+  #   GoogleUtilities-54d832b6 → used by Pods-notifications (via FirebaseMessaging etc.)
+  # Both produce GoogleUtilities.framework and GoogleUtilities_Privacy.bundle to the same
+  # archive staging path → "Multiple commands produce" error.
   #
-  # Fix: set SKIP_INSTALL=YES on any framework target that produces the same product
-  # filename as one of Runner's direct pod dependencies. The duplicate (extension-only)
-  # target is still compiled and linked but not staged separately during archive.
+  # Fix: set SKIP_INSTALL=YES on any pod target that:
+  #   1. Is a direct dependency of Pods-notifications, AND
+  #   2. Is NOT a direct dependency of Pods-Runner
+  # plus any resource-bundle sub-targets they own.
+  # The target still compiles (notifications links against it) but Xcode won't stage
+  # it to UninstalledProducts during archive, eliminating the collision.
   begin
+    require 'set'
+
     runner_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-Runner' }
-    runner_dep_names = Set.new(
-      runner_agg&.dependencies&.map { |d| d.target&.name }&.compact
-    )
+    notif_agg  = installer.pods_project.targets.find { |t| t.name == 'Pods-notifications' }
 
-    # Map product filename → canonical target name for Runner's deps
-    runner_products = {}
-    runner_dep_names.each do |dep_name|
-      dep_target = installer.pods_project.native_targets.find { |t| t.name == dep_name }
-      fw_path = dep_target&.product_reference&.path
-      runner_products[fw_path] = dep_name if fw_path
+    runner_direct = Set.new(runner_agg&.dependencies&.map { |d| d.target&.name }&.compact)
+    notif_direct  = Set.new(notif_agg&.dependencies&.map  { |d| d.target&.name }&.compact)
+
+    # Targets owned exclusively by notifications (not needed by Runner directly)
+    notif_only = notif_direct - runner_direct
+
+    # Also collect resource-bundle sub-targets of notif_only targets
+    notif_only_bundles = Set.new
+    installer.pods_project.native_targets.each do |t|
+      fw = t.product_reference&.path
+      next unless fw&.end_with?('.bundle')
+      # Bundle belongs to a notif_only parent if its name starts with parent prefix
+      notif_only.any? { |parent| t.name.start_with?(parent) } &&
+        notif_only_bundles.add(t.name)
     end
 
-    installer.pods_project.native_targets.each do |target|
-      next if runner_dep_names.include?(target.name)
-      fw_path = target.product_reference&.path
-      next unless fw_path && runner_products.key?(fw_path)
+    skip_targets = notif_only + notif_only_bundles
+    changed = false
 
-      target.build_configurations.each do |config|
-        config.build_settings['SKIP_INSTALL'] = 'YES'
-      end
-      puts "[fix] SKIP_INSTALL=YES on '#{target.name}' (duplicate of '#{runner_products[fw_path]}')"
+    installer.pods_project.native_targets.each do |t|
+      next unless skip_targets.include?(t.name)
+      t.build_configurations.each { |c| c.build_settings['SKIP_INSTALL'] = 'YES' }
+      puts "[fix] SKIP_INSTALL=YES on '#{t.name}'"
+      changed = true
     end
 
-    installer.pods_project.save
+    installer.pods_project.save if changed
   rescue => e
     puts "Warning: SKIP_INSTALL fix failed: #{e.message}"
   end

@@ -62,30 +62,35 @@ post_install do |installer|
   end
 
   begin
+    require 'set'
+
     runner_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-Runner' }
-    runner_dep_names = Set.new(
-      runner_agg&.dependencies&.map { |d| d.target&.name }&.compact
-    )
+    notif_agg  = installer.pods_project.targets.find { |t| t.name == 'Pods-notifications' }
 
-    runner_products = {}
-    runner_dep_names.each do |dep_name|
-      dep_target = installer.pods_project.native_targets.find { |t| t.name == dep_name }
-      fw_path = dep_target&.product_reference&.path
-      runner_products[fw_path] = dep_name if fw_path
+    runner_direct = Set.new(runner_agg&.dependencies&.map { |d| d.target&.name }&.compact)
+    notif_direct  = Set.new(notif_agg&.dependencies&.map  { |d| d.target&.name }&.compact)
+
+    notif_only = notif_direct - runner_direct
+
+    notif_only_bundles = Set.new
+    installer.pods_project.native_targets.each do |t|
+      fw = t.product_reference&.path
+      next unless fw&.end_with?('.bundle')
+      notif_only.any? { |parent| t.name.start_with?(parent) } &&
+        notif_only_bundles.add(t.name)
     end
 
-    installer.pods_project.native_targets.each do |target|
-      next if runner_dep_names.include?(target.name)
-      fw_path = target.product_reference&.path
-      next unless fw_path && runner_products.key?(fw_path)
+    skip_targets = notif_only + notif_only_bundles
+    changed = false
 
-      target.build_configurations.each do |config|
-        config.build_settings['SKIP_INSTALL'] = 'YES'
-      end
+    installer.pods_project.native_targets.each do |t|
+      next unless skip_targets.include?(t.name)
+      t.build_configurations.each { |c| c.build_settings['SKIP_INSTALL'] = 'YES' }
+      puts "[fix] SKIP_INSTALL=YES on '#{t.name}'"
+      changed = true
     end
 
-    installer.pods_project.save
+    installer.pods_project.save if changed
   rescue => e
-    puts "Warning: SKIP_INSTALL fix failed: #{e.message}"
   end
 end
