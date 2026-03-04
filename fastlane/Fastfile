@@ -152,8 +152,91 @@ desc "Sync codesigning certificates for Build"
       UI.message("Failed to update Info.plist: #{ex.message}")
     end
 
-  sh("flutter build ipa --release --export-options-plist=#{export_options_path} --build-number=#{safe_build_number} --no-tree-shake-icons")
-    
+    # ── Step 1 ────────────────────────────────────────────────────────────────
+    # Flutter prepares the iOS build: Podfile migration, pod install, Dart AOT.
+    # We use `flutter build ios` (not `flutter build ipa`) so we can intercept
+    # between pod install and xcodebuild archive in Step 3.
+    sh("flutter build ios --release --no-codesign --build-number=#{safe_build_number} --no-tree-shake-icons")
+
+    # ── Step 2 ────────────────────────────────────────────────────────────────
+    # Fix duplicate GoogleUtilities targets created by CocoaPods.
+    #
+    # Root cause: Runner (via Firebase/Analytics) and notifications (via
+    # Firebase/Messaging) resolve GoogleUtilities with different subspec sets,
+    # so CocoaPods creates two targets with different hash suffixes (e.g.
+    # GoogleUtilities-7cacef58 and GoogleUtilities-54d832b6).  Both have
+    # SKIP_INSTALL=NO, so during `xcodebuild archive` both try to stage
+    # GoogleUtilities.framework to UninstalledProducts/iphoneos/ → collision.
+    #
+    # Fix: set SKIP_INSTALL=YES on every pod target that belongs exclusively
+    # to the notifications aggregate (i.e. is a direct dep of Pods-notifications
+    # but NOT a direct dep of Pods-Runner).
+    begin
+      require 'xcodeproj'
+      require 'set'
+
+      pods_proj_path = File.expand_path("../ios/Pods/Pods.xcodeproj", __dir__)
+      if File.exist?(pods_proj_path)
+        pods_proj = Xcodeproj::Project.open(pods_proj_path)
+
+        runner_agg = pods_proj.targets.find { |t| t.name == 'Pods-Runner' }
+        notif_agg  = pods_proj.targets.find { |t| t.name == 'Pods-notifications' }
+
+        if runner_agg && notif_agg
+          runner_direct = Set.new((runner_agg.dependencies || []).map { |d| d.target&.name }.compact)
+          notif_direct  = Set.new((notif_agg.dependencies  || []).map { |d| d.target&.name }.compact)
+          notif_only    = notif_direct - runner_direct
+
+          # Also mark any .bundle resource sub-targets that belong only to notifications
+          notif_only_bundles = Set.new
+          pods_proj.native_targets.each do |t|
+            fw = t.product_reference&.path
+            next unless fw&.end_with?('.bundle')
+            notif_only_bundles.add(t.name) if notif_only.any? { |parent| t.name.start_with?(parent) }
+          end
+
+          skip_targets = notif_only + notif_only_bundles
+          changed = false
+          pods_proj.native_targets.each do |t|
+            next unless skip_targets.include?(t.name)
+            t.build_configurations.each { |c| c.build_settings['SKIP_INSTALL'] = 'YES' }
+            UI.message("[dedup-fix] SKIP_INSTALL=YES on '#{t.name}'")
+            changed = true
+          end
+
+          if changed
+            pods_proj.save
+            UI.message("[dedup-fix] Pods.xcodeproj patched successfully")
+          else
+            UI.message("[dedup-fix] No notification-only duplicate targets found (may be OK)")
+          end
+        else
+          UI.important("[dedup-fix] Warning: Pods-Runner or Pods-notifications aggregate target not found in Pods.xcodeproj")
+        end
+      else
+        UI.important("[dedup-fix] Warning: Pods.xcodeproj not found at #{pods_proj_path}")
+      end
+    rescue => e
+      UI.important("[dedup-fix] Warning: Fix failed: #{e.message}")
+      UI.important(e.backtrace.first(5).join("\n"))
+    end
+
+    # ── Step 3 ────────────────────────────────────────────────────────────────
+    # Archive and export the IPA using gym (Fastlane's build_app).
+    # gym calls xcodebuild directly — it does NOT re-run pod install, so the
+    # SKIP_INSTALL patches from Step 2 are preserved.
+    gym(
+      workspace:              "ios/Runner.xcworkspace",
+      scheme:                 "Runner",
+      configuration:          "Release",
+      export_method:          "app-store",
+      export_options:         export_options_path,
+      output_directory:       "build/ios/ipa",
+      archive_path:           "build/ios/Runner.xcarchive",
+      skip_profile_detection: true,
+      suppress_xcode_output:  false
+    )
+
     # Find the built IPA file with absolute path
     ipa_path = Dir.glob(File.expand_path("../build/ios/ipa/*.ipa", __dir__)).first
     UI.user_error!("No IPA file found at build/ios/ipa/") unless ipa_path

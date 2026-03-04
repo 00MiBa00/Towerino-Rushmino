@@ -132,6 +132,9 @@ jobs:
       ###########################
       #  Install CocoaPods      #
       ###########################
+      - name: Update CocoaPods
+        run: sudo gem install cocoapods --no-document
+
       - name: Install CocoaPods dependencies
         run: |
           cd ios
