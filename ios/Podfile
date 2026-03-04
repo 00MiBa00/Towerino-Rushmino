@@ -35,14 +35,16 @@ target 'Runner' do
   target 'RunnerTests' do
     inherit! :search_paths
   end
+end
 
-  # Nested inside Runner so CocoaPods deduplicates shared dependencies (e.g. GoogleUtilities).
-  # inherit! :search_paths gives the extension header/framework search paths from the host.
-  # pod 'Firebase/Messaging' is still required so the extension can link FirebaseMessaging.
-  target 'notifications' do
-    inherit! :search_paths
-    pod 'Firebase/Messaging'
-  end
+# Notifications extension: sibling of Runner.
+# Firebase/Messaging is declared here so the extension can link FirebaseMessaging.
+# The post_install hook below removes shared transitive deps (e.g. GoogleUtilities)
+# from Pods-notifications to prevent Xcode "Multiple commands produce" errors.
+target 'notifications' do
+  use_frameworks!
+  inherit! :search_paths
+  pod 'Firebase/Messaging'
 end
 
 post_install do |installer|
@@ -59,9 +61,26 @@ post_install do |installer|
     if target.name == 'notifications'
       target.build_configurations.each do |config|
         config.build_settings['APPLICATION_EXTENSION_API_ONLY'] = 'YES'
-        # Allow the extension to find frameworks embedded in the host app at runtime
         config.build_settings['LD_RUNPATH_SEARCH_PATHS'] = '$(inherited) @executable_path/../../Frameworks'
       end
     end
+  end
+
+  # Fix: Prevent "Multiple commands produce GoogleUtilities*" in Xcode 16+
+  # when notifications is a sibling of Runner. Both Pods-Runner and Pods-notifications
+  # transitively depend on GoogleUtilities, causing duplicate build outputs during archive.
+  # Solution: remove from Pods-notifications any target dependencies already covered
+  # by Pods-Runner — they will be provided by the host app at runtime.
+  begin
+    notif_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-notifications' }
+    runner_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-Runner' }
+    if notif_agg && runner_agg
+      runner_dep_names = runner_agg.dependencies.map { |d| d.target.name }
+      shared_deps = notif_agg.dependencies.select { |d| runner_dep_names.include?(d.target.name) }
+      shared_deps.each { |d| d.remove_from_project }
+      installer.pods_project.save unless shared_deps.empty?
+    end
+  rescue => e
+    puts "Warning: Pods deduplication: #{e.message}"
   end
 end
