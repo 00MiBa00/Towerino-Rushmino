@@ -158,38 +158,78 @@ desc "Sync codesigning certificates for Build"
     # so we can intercept between pod install and xcodebuild archive.
     sh("flutter build ios --release --no-codesign --build-number=#{safe_build_number} --no-tree-shake-icons")
 
-    # ── Step 2: xcconfig patch (duplicate GoogleUtilities targets) ─────────────
-    # Root cause: CocoaPods creates two GoogleUtilities native targets with
-    # different hash suffixes (-54d832b6, -7cacef58). Both have SKIP_INSTALL=NO
-    # → both stage GoogleUtilities.framework to the same archive path → collision.
+    # ── Step 2: rename GoogleUtilities-7cacef58 product to break staging collision ─
+    # Root cause: CocoaPods creates two GoogleUtilities targets (-54d832b6 and
+    # -7cacef58). Both have SKIP_INSTALL=YES in their xcconfigs (CocoaPods
+    # default) → both stage to UninstalledProducts/iphoneos/GoogleUtilities.framework
+    # → Xcode new build system: "error: Multiple commands produce …"
     #
-    # flutter build ios runs pod install internally and generates xcconfig files.
-    # Xcode 16 gives xcconfig files HIGHER priority than project.pbxproj, so
-    # we append SKIP_INSTALL=YES directly to the -7cacef58 xcconfig files.
-    # No pod re-install needed — we just edit two plain-text files.
+    # xcconfig has HIGHER priority than pbxproj in Xcode 16, so writing
+    # SKIP_INSTALL to pbxproj (previous attempts) was ignored.
+    # Appending SKIP_INSTALL=YES to xcconfig also did nothing (already there).
+    #
+    # Fix: override PRODUCT_NAME via xcconfig for -7cacef58 main target.
+    # → product renamed to GoogleUtilitiesInternal.framework
+    # → stages to UninstalledProducts/iphoneos/GoogleUtilitiesInternal.framework
+    # → no collision with -54d832b6's GoogleUtilities.framework ✓
+    #
+    # For the Privacy bundle (-7cacef58-GoogleUtilities_Privacy), which may have
+    # no separate xcconfig, use xcodeproj gem on pbxproj (no xcconfig → pbxproj
+    # value IS the effective value, so xcodeproj gem change takes effect).
+    #
+    # -54d832b6 (AppDelegateSwizzler subspec) is a superset of -7cacef58
+    # (analytics subspecs), so GoogleAppMeasurement links against -54d832b6's
+    # GoogleUtilities.framework via transitive FRAMEWORK_SEARCH_PATHS and all
+    # needed symbols are present.
     begin
       pods_support = File.expand_path("../ios/Pods/Target Support Files", __dir__)
 
-      # All four xcconfig-bearing targets for GoogleUtilities-7cacef58.
-      # -54d832b6 is kept (it's alphabetically first); -7cacef58 gets SKIP_INSTALL=YES.
-      dup_target_dirs = [
-        "GoogleUtilities-7cacef58",
-        "GoogleUtilities-7cacef58-GoogleUtilities_Privacy",
-      ]
+      # ── 2a. Rename main framework via xcconfig ──────────────────────────────
+      main_xcconfigs = Dir.glob("#{pods_support}/GoogleUtilities-7cacef58/*.xcconfig")
+      if main_xcconfigs.empty?
+        UI.important("[dedup-fix] WARNING: No xcconfig found for GoogleUtilities-7cacef58")
+      end
+      main_xcconfigs.each do |xcconfig_path|
+        content = File.read(xcconfig_path)
+        if content.include?("PRODUCT_NAME = GoogleUtilitiesInternal")
+          UI.message("[dedup-fix] Already renamed (main): #{File.basename(xcconfig_path)}")
+        else
+          File.write(xcconfig_path, content.chomp + "\nPRODUCT_NAME = GoogleUtilitiesInternal\n")
+          UI.message("[dedup-fix] Set PRODUCT_NAME=GoogleUtilitiesInternal: #{xcconfig_path}")
+        end
+      end
 
-      dup_target_dirs.each do |dir|
-        Dir.glob("#{pods_support}/#{dir}/*.xcconfig").each do |xcconfig_path|
+      # ── 2b. Rename Privacy bundle ───────────────────────────────────────────
+      # Try xcconfig first (if CocoaPods generated one for the privacy bundle).
+      privacy_xcconfigs = Dir.glob("#{pods_support}/GoogleUtilities-7cacef58-GoogleUtilities_Privacy/*.xcconfig")
+      if privacy_xcconfigs.any?
+        privacy_xcconfigs.each do |xcconfig_path|
           content = File.read(xcconfig_path)
-          if content.include?("SKIP_INSTALL")
-            UI.message("[dedup-fix] Already has SKIP_INSTALL: #{File.basename(xcconfig_path)}")
-          else
-            File.write(xcconfig_path, content.chomp + "\nSKIP_INSTALL = YES\n")
-            UI.message("[dedup-fix] Patched: #{xcconfig_path}")
+          unless content.include?("PRODUCT_NAME = GoogleUtilitiesInternalPrivacy")
+            File.write(xcconfig_path, content.chomp + "\nPRODUCT_NAME = GoogleUtilitiesInternalPrivacy\n")
+            UI.message("[dedup-fix] Set PRODUCT_NAME=GoogleUtilitiesInternalPrivacy (xcconfig): #{xcconfig_path}")
           end
+        end
+      else
+        # No separate xcconfig → pbxproj build settings are the effective source.
+        # xcodeproj gem can change them because xcconfig does NOT override PRODUCT_NAME.
+        UI.message("[dedup-fix] No privacy xcconfig found, patching pbxproj via xcodeproj gem")
+        require 'xcodeproj'
+        pods_project_path = File.expand_path("../ios/Pods/Pods.xcodeproj", __dir__)
+        project = Xcodeproj::Project.open(pods_project_path)
+        priv_target = project.native_targets.find { |t| t.name == 'GoogleUtilities-7cacef58-GoogleUtilities_Privacy' }
+        if priv_target
+          priv_target.build_configurations.each do |c|
+            c.build_settings['PRODUCT_NAME'] = 'GoogleUtilitiesInternalPrivacy'
+          end
+          project.save
+          UI.message("[dedup-fix] Renamed privacy bundle to GoogleUtilitiesInternalPrivacy via pbxproj")
+        else
+          UI.important("[dedup-fix] Privacy target not found in Pods.xcodeproj (may be OK if already absent)")
         end
       end
     rescue => e
-      UI.important("[dedup-fix] xcconfig patch failed: #{e.message}")
+      UI.important("[dedup-fix] xcconfig/pbxproj rename failed: #{e.message}")
       UI.important(e.backtrace.first(5).join("\n"))
     end
 
