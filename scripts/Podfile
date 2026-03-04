@@ -38,12 +38,10 @@ target 'Runner' do
 end
 
 # Notifications extension: sibling of Runner.
-# DO NOT declare pod 'Firebase/Messaging' here — doing so causes CocoaPods to
-# create a SECOND GoogleUtilities pod target that triggers Xcode 16
-# "Multiple commands produce" during archive. See ios/Podfile for details.
 target 'notifications' do
   use_frameworks!
   inherit! :search_paths
+  pod 'Firebase/Messaging'
 end
 
 post_install do |installer|
@@ -52,6 +50,7 @@ post_install do |installer|
 
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      config.build_settings['GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS'] = 'NO'
     end
 
     if target.name == 'notifications'
@@ -63,35 +62,30 @@ post_install do |installer|
   end
 
   begin
-    firebase_ldflags = [
-      '-lsqlite3', '-lz',
-      '-framework "CoreTelephony"',
-      '-framework "FBLPromises"',
-      '-framework "FirebaseCore"',
-      '-framework "FirebaseCoreInternal"',
-      '-framework "FirebaseInstallations"',
-      '-framework "FirebaseMessaging"',
-      '-framework "Foundation"',
-      '-framework "GoogleDataTransport"',
-      '-framework "GoogleUtilities"',
-      '-framework "Security"',
-      '-framework "SystemConfiguration"',
-      '-framework "UIKit"',
-      '-framework "nanopb"',
-      '-weak_framework "UserNotifications"',
-    ].join(' ')
+    runner_agg = installer.pods_project.targets.find { |t| t.name == 'Pods-Runner' }
+    runner_dep_names = Set.new(
+      runner_agg&.dependencies&.map { |d| d.target&.name }&.compact
+    )
 
-    pods_root = installer.sandbox.root.to_s
-    %w[Debug Profile Release].each do |cfg|
-      xcconfig_path = "#{pods_root}/Target Support Files/Pods-notifications/Pods-notifications.#{cfg.downcase}.xcconfig"
-      next unless File.exist?(xcconfig_path)
-      content = File.read(xcconfig_path)
-      unless content.include?('firebase_ldflags_injected')
-        content += "\n# firebase_ldflags_injected\nOTHER_LDFLAGS = $(inherited) #{firebase_ldflags}\n"
-        File.write(xcconfig_path, content)
+    runner_products = {}
+    runner_dep_names.each do |dep_name|
+      dep_target = installer.pods_project.native_targets.find { |t| t.name == dep_name }
+      fw_path = dep_target&.product_reference&.path
+      runner_products[fw_path] = dep_name if fw_path
+    end
+
+    installer.pods_project.native_targets.each do |target|
+      next if runner_dep_names.include?(target.name)
+      fw_path = target.product_reference&.path
+      next unless fw_path && runner_products.key?(fw_path)
+
+      target.build_configurations.each do |config|
+        config.build_settings['SKIP_INSTALL'] = 'YES'
       end
     end
+
+    installer.pods_project.save
   rescue => e
-    puts "Warning: xcconfig ldflags injection failed: #{e.message}"
+    puts "Warning: SKIP_INSTALL fix failed: #{e.message}"
   end
 end
