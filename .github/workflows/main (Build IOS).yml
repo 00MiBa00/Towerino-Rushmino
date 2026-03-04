@@ -179,15 +179,6 @@ jobs:
       ###########################
       #  Build & Deploy (Main)  #
       ###########################
-      - name: Upload gym build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gym-build-log-${{ github.run_number }}
-          path: ~/Library/Logs/gym/
-          if-no-files-found: warn
-          retention-days: 7
-
       - name: Build and deploy with Fastlane
         if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         env:
@@ -207,7 +198,28 @@ jobs:
           eval "$(ssh-agent -s)"
           echo "$MATCH_DEPLOY_KEY" | tr -d '\r' | ssh-add -
           bundle exec fastlane ios beta
-      
+
+      - name: Print raw gym log on failure
+        if: failure()
+        run: |
+          LOG=$(ls ~/Library/Logs/gym/Runner-Runner.log 2>/dev/null || echo "")
+          if [ -n "$LOG" ]; then
+            echo "======= RAW GYM LOG (last 300 lines) ======="
+            tail -300 "$LOG"
+            echo "============================================="
+          else
+            echo "No gym log found at ~/Library/Logs/gym/Runner-Runner.log"
+          fi
+
+      - name: Upload gym build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gym-build-log-${{ github.run_number }}
+          path: ~/Library/Logs/gym/
+          if-no-files-found: warn
+          retention-days: 7
+
       ###########################
       #  Upload Xcode Archive   #
       ###########################
