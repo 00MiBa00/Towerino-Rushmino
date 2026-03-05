@@ -125,6 +125,14 @@ jobs:
         run: bundle install
       
       ###########################
+      #  Install FlutterFire   #
+      ###########################
+      - name: Install FlutterFire CLI
+        run: |
+          dart pub global activate flutterfire_cli
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+
+      ###########################
       #  Install CocoaPods      #
       ###########################
       - name: Install CocoaPods dependencies
