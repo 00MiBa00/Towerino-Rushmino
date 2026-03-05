@@ -75,7 +75,7 @@ platform :ios do
     sh("rm -rf ios/Podfile.lock")
 
     # Reinstall pods
-    sh("cd ios && pod install --repo-update")
+    sh("pod install --repo-update")
 
     # -------------------------------
     # Sync certificates
