@@ -41,7 +41,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-           
+          flutter-version: '3.35.7'
           channel: 'stable'
           cache: true
       
@@ -124,22 +124,13 @@ jobs:
         run: bundle install
       
       ###########################
-      #  Install FlutterFire   #
-      ###########################
-      - name: Install FlutterFire CLI
-        run: dart pub global activate flutterfire_cli
-
-      ###########################
       #  Install CocoaPods      #
       ###########################
-      - name: Update CocoaPods
-        run: sudo gem install cocoapods --no-document
-
       - name: Install CocoaPods dependencies
         run: |
           cd ios
-          rm -rf Pods
-          pod install
+          rm -rf Pods Podfile.lock
+          pod install --repo-update
       
       ###########################
       #  Sync Certificates      #
@@ -198,28 +189,7 @@ jobs:
           eval "$(ssh-agent -s)"
           echo "$MATCH_DEPLOY_KEY" | tr -d '\r' | ssh-add -
           bundle exec fastlane ios beta
-
-      - name: Print raw gym log on failure
-        if: failure()
-        run: |
-          LOG=$(ls ~/Library/Logs/gym/Runner-Runner.log 2>/dev/null || echo "")
-          if [ -n "$LOG" ]; then
-            echo "======= RAW GYM LOG (last 300 lines) ======="
-            tail -300 "$LOG"
-            echo "============================================="
-          else
-            echo "No gym log found at ~/Library/Logs/gym/Runner-Runner.log"
-          fi
-
-      - name: Upload gym build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gym-build-log-${{ github.run_number }}
-          path: ~/Library/Logs/gym/
-          if-no-files-found: warn
-          retention-days: 7
-
+      
       ###########################
       #  Upload Xcode Archive   #
       ###########################
