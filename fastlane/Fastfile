@@ -22,7 +22,6 @@ platform :ios do
       key_id: ENV["APPSTORE_KEY_ID"],
       issuer_id: ENV["APPSTORE_ISSUER_ID"],
       key_content: ENV['APPSTORE_P8']
-
     )
 
     main_app_bundle_id = ENV["IOS_BUNDLE_ID"]
@@ -37,7 +36,7 @@ platform :ios do
     )
   end
 
-desc "Sync codesigning certificates for Build"
+  desc "Sync codesigning certificates for Build"
   lane :sync_certificates_for_build do
     api_key = app_store_connect_api_key(
       key_id: ENV["APPSTORE_KEY_ID"],
@@ -61,11 +60,29 @@ desc "Sync codesigning certificates for Build"
   desc "Build and upload to TestFlight"
   lane :beta do
     setup_ci
-    
+
+    # -------------------------------
+    # FIX: Update CocoaPods on CI
+    # -------------------------------
+    sh("sudo gem uninstall cocoapods -a -x || true")
+    sh("sudo gem install cocoapods -v 1.16.2")
+
+    # -------------------------------
+    # FIX: Clean Flutter & Pods
+    # -------------------------------
+    sh("flutter clean")
+    sh("rm -rf ios/Pods")
+    sh("rm -rf ios/Podfile.lock")
+
+    # Reinstall pods
+    sh("cd ios && pod install --repo-update")
+
+    # -------------------------------
     # Sync certificates
+    # -------------------------------
     sync_certificates
-    
-    # Configure manual code signing for Xcode project
+
+    # Configure manual code signing for main target
     update_code_signing_settings(
       use_automatic_signing: false,
       path: "ios/Runner.xcodeproj",
@@ -86,21 +103,17 @@ desc "Sync codesigning certificates for Build"
       code_sign_identity: "Apple Distribution"
     )
     
-    # Update ExportOptions.plist with Match provisioning profiles
+    # ExportOptions
     export_options_path = File.expand_path("../ios/ExportOptions.plist", __dir__)
     
-    # Get provisioning profile names from Match
     main_profile = ENV["sigh_#{ENV['IOS_BUNDLE_ID']}_appstore_profile-name"]
     extension_profile = ENV["sigh_#{ENV['IOS_BUNDLE_ID']}.notifications_appstore_profile-name"]
     
-    # Read, update and write ExportOptions.plist
     require 'plist'
     export_options = Plist.parse_xml(export_options_path)
 
-    # If the ExportOptions.plist is missing or couldn't be parsed, create a minimal
-    # export_options structure so we can populate teamID and provisioningProfiles.
     if export_options.nil?
-      UI.message("ExportOptions.plist not found or invalid at #{export_options_path}. Creating a minimal ExportOptions structure.")
+      UI.message("ExportOptions.plist missing. Creating minimal structure.")
       export_options = {
         'method' => 'app-store',
         'teamID' => ENV['APPLE_TEAM_ID'],
@@ -108,64 +121,52 @@ desc "Sync codesigning certificates for Build"
       }
     end
 
-    # Ensure teamID is set when available
-    export_options['teamID'] = ENV['APPLE_TEAM_ID'] if ENV['APPLE_TEAM_ID'] && !ENV['APPLE_TEAM_ID'].empty?
+    export_options['teamID'] = ENV['APPLE_TEAM_ID']
 
-    # Populate provisioningProfiles mapping
     export_options['provisioningProfiles'] = {
       ENV['IOS_BUNDLE_ID'] => main_profile,
       "#{ENV['IOS_BUNDLE_ID']}.notifications" => extension_profile
     }
 
     File.write(export_options_path, export_options.to_plist)
-    
-    # Determine a safe build number.
-    # Default behavior: use an epoch timestamp to guarantee uniqueness between uploads.
-    # If you *really* want to use the CI-provided BUILD_NUMBER (e.g. github.run_number),
-    # set ENV['FORCE_CI_BUILD_NUMBER']='true' in the workflow.
+
+    # -------------------------------
+    # Build number logic
+    # -------------------------------
     build_number_env = ENV['BUILD_NUMBER']
-    if ENV['FORCE_CI_BUILD_NUMBER'] == 'true' && build_number_env && build_number_env.to_i > 0
+
+    if ENV['FORCE_CI_BUILD_NUMBER'] == 'true' && build_number_env.to_i > 0
       safe_build_number = build_number_env
-      UI.message("Using CI-provided BUILD_NUMBER: #{safe_build_number} (FORCE_CI_BUILD_NUMBER=true)")
     else
       safe_build_number = Time.now.to_i.to_s
-      if build_number_env && build_number_env.to_i > 0
-        UI.message("Ignoring CI BUILD_NUMBER=#{build_number_env} in favor of timestamp to avoid duplicate uploads. To force CI BUILD_NUMBER set FORCE_CI_BUILD_NUMBER=true")
-      end
-      UI.message("Using timestamp build number: #{safe_build_number}")
     end
 
-    # Build Flutter IPA with the chosen build number
-    # Ensure iOS Info.plist CFBundleVersion is updated so App Store sees the new build number
+    # Update Info.plist
     begin
       info_plist_path = File.expand_path("../ios/Runner/Info.plist", __dir__)
       if File.exist?(info_plist_path)
-        UI.message("Updating #{info_plist_path} CFBundleVersion => #{safe_build_number}")
-        require 'plist'
         info_plist = Plist.parse_xml(info_plist_path)
         info_plist['CFBundleVersion'] = safe_build_number
         File.write(info_plist_path, info_plist.to_plist)
-      else
-        UI.message("Warning: Info.plist not found at #{info_plist_path}, skipping CFBundleVersion update")
       end
     rescue => ex
-      UI.message("Failed to update Info.plist: #{ex.message}")
+      UI.message("Info.plist update failed: #{ex.message}")
     end
 
-  sh("flutter build ipa --release --export-options-plist=#{export_options_path} --build-number=#{safe_build_number} --no-tree-shake-icons")
-    
-    # Find the built IPA file with absolute path
+    # -------------------------------
+    # Build IPA
+    # -------------------------------
+    sh("flutter build ipa --release --export-options-plist=#{export_options_path} --build-number=#{safe_build_number} --no-tree-shake-icons")
+
     ipa_path = Dir.glob(File.expand_path("../build/ios/ipa/*.ipa", __dir__)).first
-    UI.user_error!("No IPA file found at build/ios/ipa/") unless ipa_path
-    
-    # API Key for TestFlight upload
+    UI.user_error!("No IPA found") unless ipa_path
+
     api_key = app_store_connect_api_key(
       key_id: ENV["APPSTORE_KEY_ID"],
       issuer_id: ENV["APPSTORE_ISSUER_ID"],
       key_filepath: ENV["APP_STORE_CONNECT_API_KEY_PATH"]
     )
-    
-    # Upload to TestFlight
+
     upload_to_testflight(
       skip_waiting_for_build_processing: true,
       ipa: ipa_path,
