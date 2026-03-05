@@ -60,29 +60,11 @@ platform :ios do
   desc "Build and upload to TestFlight"
   lane :beta do
     setup_ci
-
-    # -------------------------------
-    # FIX: Update CocoaPods on CI
-    # -------------------------------
-    sh("sudo gem uninstall cocoapods -a -x || true")
-    sh("sudo gem install cocoapods -v 1.16.2")
-
-    # -------------------------------
-    # FIX: Clean Flutter & Pods
-    # -------------------------------
-    sh("flutter clean")
-    sh("rm -rf ios/Pods")
-    sh("rm -rf ios/Podfile.lock")
-
-    # Reinstall pods
-    sh("pod install --repo-update")
-
-    # -------------------------------
+    
     # Sync certificates
-    # -------------------------------
     sync_certificates
-
-    # Configure manual code signing for main target
+    
+    # Configure manual code signing for Xcode project
     update_code_signing_settings(
       use_automatic_signing: false,
       path: "ios/Runner.xcodeproj",
@@ -103,7 +85,7 @@ platform :ios do
       code_sign_identity: "Apple Distribution"
     )
     
-    # ExportOptions
+    # Update ExportOptions.plist with Match provisioning profiles
     export_options_path = File.expand_path("../ios/ExportOptions.plist", __dir__)
     
     main_profile = ENV["sigh_#{ENV['IOS_BUNDLE_ID']}_appstore_profile-name"]
@@ -113,7 +95,7 @@ platform :ios do
     export_options = Plist.parse_xml(export_options_path)
 
     if export_options.nil?
-      UI.message("ExportOptions.plist missing. Creating minimal structure.")
+      UI.message("ExportOptions.plist not found or invalid at #{export_options_path}. Creating minimal ExportOptions structure.")
       export_options = {
         'method' => 'app-store',
         'teamID' => ENV['APPLE_TEAM_ID'],
@@ -121,7 +103,7 @@ platform :ios do
       }
     end
 
-    export_options['teamID'] = ENV['APPLE_TEAM_ID']
+    export_options['teamID'] = ENV['APPLE_TEAM_ID'] if ENV['APPLE_TEAM_ID'] && !ENV['APPLE_TEAM_ID'].empty?
 
     export_options['provisioningProfiles'] = {
       ENV['IOS_BUNDLE_ID'] => main_profile,
@@ -129,44 +111,60 @@ platform :ios do
     }
 
     File.write(export_options_path, export_options.to_plist)
-
-    # -------------------------------
+    
     # Build number logic
-    # -------------------------------
     build_number_env = ENV['BUILD_NUMBER']
 
-    if ENV['FORCE_CI_BUILD_NUMBER'] == 'true' && build_number_env.to_i > 0
+    if ENV['FORCE_CI_BUILD_NUMBER'] == 'true' && build_number_env && build_number_env.to_i > 0
       safe_build_number = build_number_env
+      UI.message("Using CI-provided BUILD_NUMBER: #{safe_build_number}")
     else
       safe_build_number = Time.now.to_i.to_s
+      UI.message("Using timestamp build number: #{safe_build_number}")
     end
 
-    # Update Info.plist
+    # Update Info.plist build number
     begin
       info_plist_path = File.expand_path("../ios/Runner/Info.plist", __dir__)
       if File.exist?(info_plist_path)
+        require 'plist'
         info_plist = Plist.parse_xml(info_plist_path)
         info_plist['CFBundleVersion'] = safe_build_number
         File.write(info_plist_path, info_plist.to_plist)
       end
     rescue => ex
-      UI.message("Info.plist update failed: #{ex.message}")
+      UI.message("Failed to update Info.plist: #{ex.message}")
     end
 
-    # -------------------------------
-    # Build IPA
-    # -------------------------------
-    sh("flutter build ipa --release --export-options-plist=#{export_options_path} --build-number=#{safe_build_number} --no-tree-shake-icons")
+    # Diagnostic information
+    UI.message("=== Build Environment ===")
+    sh("xcodebuild -version || true")
+    sh("xcrun --show-sdk-path || true")
+    sh("flutter doctor -v || true")
+    UI.message("========================")
 
+    UI.message("Starting Flutter build ipa with build number: #{safe_build_number}")
+    
+    begin
+      sh("flutter build ipa --release --export-options-plist=#{export_options_path} --build-number=#{safe_build_number} --no-tree-shake-icons")
+    rescue => e
+      UI.error("Flutter build failed with error:")
+      UI.error(e.message)
+      UI.error("Checking for common issues...")
+      sh("pod --version || true")
+      sh("ls -la ios/Pods || true")
+      UI.user_error!("Build failed. See logs above for details.")
+    end
+    
     ipa_path = Dir.glob(File.expand_path("../build/ios/ipa/*.ipa", __dir__)).first
-    UI.user_error!("No IPA found") unless ipa_path
-
+    UI.user_error!("No IPA file found at build/ios/ipa/") unless ipa_path
+    
     api_key = app_store_connect_api_key(
       key_id: ENV["APPSTORE_KEY_ID"],
       issuer_id: ENV["APPSTORE_ISSUER_ID"],
       key_filepath: ENV["APP_STORE_CONNECT_API_KEY_PATH"]
     )
-
+    
     upload_to_testflight(
       skip_waiting_for_build_processing: true,
       ipa: ipa_path,
