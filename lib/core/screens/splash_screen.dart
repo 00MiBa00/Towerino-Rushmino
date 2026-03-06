@@ -29,7 +29,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.width;
-    final logoSize = screenHeight * 0.8; // Adaptive logo size
+    final logoSize = screenHeight * 0.8; // Адаптивный размер логотипа
 
     return Scaffold(
       body: Container(

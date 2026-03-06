@@ -15,7 +15,7 @@ class _PushRequestScreenState extends State<PushRequestScreen> {
   @override
   void initState() {
     super.initState();
-    // Allow all screen orientations
+    // Разрешаем все ориентации экрана
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -26,7 +26,7 @@ class _PushRequestScreenState extends State<PushRequestScreen> {
 
   @override
   void dispose() {
-    // Restore all orientations when leaving the screen
+    // Восстанавливаем все ориентации при закрытии экрана
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -48,9 +48,9 @@ class _PushRequestScreenState extends State<PushRequestScreen> {
           builder: (context, constraints) {
             return Column(
               children: [
-                // Top section with spacing
+                // Верхняя часть с отступом
 
-                // Center section with logo
+                // Центральная часть с логотипом
                 Expanded(
                   flex: isLandscape ? 2 : 4,
                   child: Center(
@@ -66,7 +66,7 @@ class _PushRequestScreenState extends State<PushRequestScreen> {
                   ),
                 ),
 
-                // Bottom section with text and buttons
+                // Нижняя часть с текстами и кнопками
                 Expanded(
                   flex: isLandscape ? 3 : 2,
                   child: Container(
@@ -80,7 +80,7 @@ class _PushRequestScreenState extends State<PushRequestScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        // First text
+                        // Первый текст
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
@@ -99,7 +99,7 @@ class _PushRequestScreenState extends State<PushRequestScreen> {
                           ),
                         ),
 
-                        // Second text
+                        // Второй текст
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
@@ -118,7 +118,7 @@ class _PushRequestScreenState extends State<PushRequestScreen> {
                           ),
                         ),
 
-                        // Buttons
+                        // Кнопки
                         Container(
                           width: double.infinity,
                           height: isLandscape ? 40 : 50,
@@ -150,7 +150,7 @@ class _PushRequestScreenState extends State<PushRequestScreen> {
                           height: isLandscape ? 40 : 50,
                           child: ElevatedButton(
                             onPressed: () {
-                              // Handle Skip tap
+                              // Обработка нажатия "Скип"
                               SdkInitializer.pushRequestDecline();
                               Navigator.pushAndRemoveUntil(
                                 context,

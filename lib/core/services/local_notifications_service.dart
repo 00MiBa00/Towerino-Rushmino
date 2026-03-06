@@ -19,12 +19,11 @@ class LocalNotificationsService {
   final _androidInitializationSettings =
       const AndroidInitializationSettings('@mipmap/ic_launcher');
 
-  //iOS-specific initialization settings — do NOT auto-request permission here.
-  // Permission is requested explicitly by the caller (after user taps "Yes").
+  //iOS-specific initialization settings with permission requests
   final _iosInitializationSettings = const DarwinInitializationSettings(
-    requestAlertPermission: false,
-    requestBadgePermission: false,
-    requestSoundPermission: false,
+    requestAlertPermission: true,
+    requestBadgePermission: true,
+    requestSoundPermission: true,
   );
 
   //Android notification channel configuration

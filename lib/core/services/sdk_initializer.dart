@@ -4,6 +4,7 @@ import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:appsflyer_sdk/appsflyer_sdk.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:ice_wave_app/app.dart';
 import '../../app/clear_app.dart';
 import '../../firebase_options.dart';
 import '../app_config.dart';
@@ -24,11 +25,11 @@ class SdkInitializer {
   static BuildContext? _context;
   static AppsflyerSdk? _appsflyerSdk;
 
-  // Runtime storage for variables during app execution
+  // Хранилище для переменных во время выполнения приложения
   static final Map<String, dynamic> _runtimeStorage = {};
   static Map<String, dynamic> _convrtsion = {};
 
-  // Getters for quick access to common variables
+  // Геттеры для удобного доступа к часто используемым переменным
   static String? receivedUrl;
   static String? pushURL;
   static String? get conversionData =>
@@ -43,17 +44,17 @@ class SdkInitializer {
   static String deep_link_sub1 = "";
   static String deep_link_value = "";
 
-  /// Saves _runtimeStorage contents as a JSON string
+  /// Сохраняет содержимое _runtimeStorage в строку JSON
   static String saveRuntimeStorage() {
     try {
       return json.encode(_runtimeStorage);
     } catch (e) {
-      //  print('Error saving _runtimeStorage: $e');
+      //  print('Ошибка при сохранении _runtimeStorage: $e');
       return '{}';
     }
   }
 
-  /// Loads JSON string into _runtimeStorage (overwrites old values)
+  /// Загружает содержимое JSON-строки в _runtimeStorage (старые значения перезаписываются)
   static void loadRuntimeStorage(String jsonString) {
     try {
       Map<String, dynamic> map = json.decode(jsonString);
@@ -61,11 +62,11 @@ class SdkInitializer {
         ..clear()
         ..addAll(map);
     } catch (e) {
-      // print('Error loading _runtimeStorage: $e');
+      // print('Ошибка при загрузке _runtimeStorage: $e');
     }
   }
 
-  // Storage helper methods
+  // Методы для работы с хранилищем
   static void setValue(String key, dynamic value) {
     _runtimeStorage[key] = value;
     saveRuntimeStorageToDevice();
@@ -78,27 +79,21 @@ class SdkInitializer {
       //  print("save data $jsonString");
     } catch (e) {
       if (kDebugMode) {
-        print('Error saving runtimeStorage on device: $e');
+        print('Ошибка при сохранении runtimeStorage на девайсе: $e');
       }
     }
   }
 
   static Future<void> loadRuntimeStorageToDevice() async {
     try {
-      final json = prefs?.getString('runtimeStorage');
-      if (json != null && json.isNotEmpty) {
-        loadRuntimeStorage(json);
-        if (kDebugMode) {
-          print('runtimeStorage loaded successfully');
-        }
-      } else {
-        if (kDebugMode) {
-          print('runtimeStorage is empty (first launch)');
-        }
+      var json = await prefs!.getString('runtimeStorage');
+      loadRuntimeStorage(json!);
+      if (kDebugMode) {
+        print('runtimeStorage успешно загружен');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error loading runtimeStorage on device: $e');
+        print('Ошибка при сохранении runtimeStorage на девайсе: $e');
       }
     }
   }
@@ -122,7 +117,7 @@ class SdkInitializer {
   static void showApp(BuildContext context) {
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const ClearApp()),
+      MaterialPageRoute(builder: (context) => const MainApp()),
       (route) => false,
     );
   }
@@ -148,22 +143,6 @@ class SdkInitializer {
     } on PlatformException catch (e) {
       if (kDebugMode) {
         print("Failed to call Swift method: '${e.message}'");
-      }
-    }
-  }
-
-  /// Requests App Tracking Transparency permission (iOS 14+).
-  /// Must be called after the first Flutter frame is drawn.
-  static Future<void> _requestATT() async {
-    try {
-      final status =
-          await AppTrackingTransparency.requestTrackingAuthorization();
-      if (kDebugMode) {
-        print('ATT status: $status');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('ATT error: $e');
       }
     }
   }
@@ -204,8 +183,8 @@ class SdkInitializer {
             (route) => false,
           );
         } else {
-          final initialMessage =
-              await FirebaseMessaging.instance.getInitialMessage();
+          final initialMessage = await FirebaseMessaging.instance
+              .getInitialMessage();
           if (initialMessage != null) {
             _onMessageOpenedApp(initialMessage);
           }
@@ -221,8 +200,11 @@ class SdkInitializer {
       return;
     }
 
-    // First launch: start AppsFlyer to get conversion data and navigate.
-    initAppsFlyer();
+    // WidgetsFlutterBinding.ensureInitialized().addPostFrameCallback((_) async {
+    //   final status =
+    //       await AppTrackingTransparency.requestTrackingAuthorization();
+    // });
+    //initAppsFlyer();
   }
 
   static Future<void> _firebaseMessagingBackgroundHandler(
@@ -291,14 +273,14 @@ class SdkInitializer {
     setValue("Organic", false);
     setValue("isFirstStart", true);
 
-    // Save full server response
+    // Сохраняем полный ответ сервера
     setValue('serverResponse', url);
 
     //print(mapToJsonString(map));
 
     // print("url: " + url);
 
-    // Save received URL to storage
+    // Сохраняем полученную ссылку в хранилище
     receivedUrl = url;
     setValue('urlReceivedAt', DateTime.now().toIso8601String());
     if (kDebugMode) {
@@ -388,99 +370,99 @@ class SdkInitializer {
 
     _appsflyerSdk
         ?.initSdk(
-      registerConversionDataCallback: true,
-      registerOnAppOpenAttributionCallback: true,
-      registerOnDeepLinkingCallback: true,
-    )
+          registerConversionDataCallback: true,
+          registerOnAppOpenAttributionCallback: true,
+          registerOnDeepLinkingCallback: true,
+        )
         .then((value) {
-      if (kDebugMode) {
-        print('_appsflyerSdk initSdk');
-      }
-
-      // _appsflyerSdk!
-      //     .onDeepLinking((DeepLinkResult dl) => (DeepLinkResult dl) {
-
-      //     });
-      _appsflyerSdk?.onInstallConversionData((res) {
-        if (isHasConversion) return;
-        isHasConversion = true;
-        _appsflyerSdk?.getAppsFlyerUID().then((value) async {
-          if (value == null) return;
-          Map<String, dynamic> conversionMap = res["payload"];
-
           if (kDebugMode) {
-            print("start load conversion 1");
-          }
-          if (kDebugMode) {
-            print("af_sub2: ${conversionMap['af_sub1']}");
+            print('_appsflyerSdk initSdk');
           }
 
-          if (kDebugMode) {
-            print(_convrtsion);
-          }
-          if (kDebugMode) {
-            print("start load conversion 2");
-          }
+          // _appsflyerSdk!
+          //     .onDeepLinking((DeepLinkResult dl) => (DeepLinkResult dl) {
 
-          if (kDebugMode) {
-            print(conversionMap);
-          }
-
-          if (kDebugMode) {
-            print("start load conversion 3");
-          }
-
-          for (var entry in conversionMap.entries) {
-            //if (_convrtsion.containsKey(entry.key)) continue;
-            if (entry.value != '') {
-              _convrtsion[entry.key] = entry.value;
+          //     });
+          _appsflyerSdk?.onInstallConversionData((res) {
+            if (isHasConversion) return;
+            isHasConversion = true;
+            _appsflyerSdk?.getAppsFlyerUID().then((value) async {
+              if (value == null) return;
+              Map<String, dynamic> conversionMap = res["payload"];
 
               if (kDebugMode) {
+                print("start load conversion 1");
+              }
+              if (kDebugMode) {
+                print("af_sub2: ${conversionMap['af_sub1']}");
+              }
+
+              if (kDebugMode) {
+                print(_convrtsion);
+              }
+              if (kDebugMode) {
+                print("start load conversion 2");
+              }
+
+              if (kDebugMode) {
+                print(conversionMap);
+              }
+
+              if (kDebugMode) {
+                print("start load conversion 3");
+              }
+
+              for (var entry in conversionMap.entries) {
+                //if (_convrtsion.containsKey(entry.key)) continue;
+                if (entry.value != '') {
+                  _convrtsion[entry.key] = entry.value;
+
+                  if (kDebugMode) {
+                    print(
+                      '|${entry.key} - ${entry.value} |${_convrtsion[entry.key]}',
+                    );
+                  }
+                }
+              }
+
+              // _convrtsion.addAll(conversionMap);
+              // _convrtsion
+              //     .addEntries(conversionMap as Iterable<MapEntry<String, dynamic>>);
+              if (_convrtsion != null) {
+                _convrtsion.addEntries([MapEntry("af_id", value)]);
+
+                setValue('conversionData', _convrtsion);
+                var url = await makeConversion(_convrtsion);
+                if (kDebugMode) {
+                  print("url -" + url);
+                }
+                onEndRequest(url);
+              }
+            });
+
+            // if (res is Map<dynamic, dynamic>) {
+            //    Map<String, dynamic>? conversionMap =(res as Map<dynamic, dynamic>)["asd"];
+            // }
+          });
+          // Starting the SDK with optional success and error callbacks
+          _appsflyerSdk?.startSDK(
+            onSuccess: () {
+              if (kDebugMode) {
+                print("AppsFlyer SDK initialized successfully.");
+              }
+            },
+            onError: (int errorCode, String errorMessage) {
+              if (kDebugMode) {
+                print(options.afDevKey + " " + options.appId);
+              }
+              if (kDebugMode) {
                 print(
-                  '|${entry.key} - ${entry.value} |${_convrtsion[entry.key]}',
+                  "Error initializing AppsFlyer SDK: Code $errorCode - $errorMessage",
                 );
               }
-            }
-          }
-
-          // _convrtsion.addAll(conversionMap);
-          // _convrtsion
-          //     .addEntries(conversionMap as Iterable<MapEntry<String, dynamic>>);
-          if (_convrtsion != null) {
-            _convrtsion.addEntries([MapEntry("af_id", value)]);
-
-            setValue('conversionData', _convrtsion);
-            var url = await makeConversion(_convrtsion);
-            if (kDebugMode) {
-              print("url -" + url);
-            }
-            onEndRequest(url);
-          }
+            },
+          );
         });
-
-        // if (res is Map<dynamic, dynamic>) {
-        //    Map<String, dynamic>? conversionMap =(res as Map<dynamic, dynamic>)["asd"];
-        // }
-      });
-      // Starting the SDK with optional success and error callbacks
-      _appsflyerSdk?.startSDK(
-        onSuccess: () {
-          if (kDebugMode) {
-            print("AppsFlyer SDK initialized successfully.");
-          }
-        },
-        onError: (int errorCode, String errorMessage) {
-          if (kDebugMode) {
-            print(options.afDevKey + " " + options.appId);
-          }
-          if (kDebugMode) {
-            print(
-              "Error initializing AppsFlyer SDK: Code $errorCode - $errorMessage",
-            );
-          }
-        },
-      );
-    });
     // Initialization of the AppsFlyer SDK
 
     // Starting the SDK with optional success and error callbacks
@@ -502,13 +484,13 @@ class SdkInitializer {
     // );
   }
 
-  /// Requests APNS token via FirebaseMessaging
+  /// Запрашивает APNS токен через FirebaseMessaging
   static Future<String?> requestAPNSToken() async {
     try {
-      // Request push notification permission (required on iOS)
+      // Запрашиваем разрешение на пуш-уведомления (для iOS запрос обязателен)
       await FirebaseMessaging.instance.requestPermission();
 
-      // Ensure FCM token is obtained (triggers APNS token on iOS)
+      // Убеждаемся, что FCM token получен (это запустит регистрацию и выдачу APNS токена на iOS)
       var token = await FirebaseMessaging.instance.getAPNSToken();
       if (kDebugMode) {
         print("first token");
@@ -521,24 +503,24 @@ class SdkInitializer {
       }
       String? apnsToken;
       int retries = 10;
-      // Wait for APNS token to become available
+      // Ждём пока APNS токен не станет доступен
       for (int i = 0; i < retries; i++) {
         apnsToken = await FirebaseMessaging.instance.getAPNSToken();
         if (apnsToken != null && apnsToken.isNotEmpty) {
           if (kDebugMode) {
-            print('APNS token received: $apnsToken');
+            print('APNS токен получен: $apnsToken');
           }
           return apnsToken;
         }
         await Future.delayed(const Duration(milliseconds: 500));
       }
       if (kDebugMode) {
-        print('APNS token not received (timeout)');
+        print('APNS токен не получен (timeout)');
       }
       return null;
     } catch (e) {
       if (kDebugMode) {
-        print('Error getting APNS token: $e');
+        print('Ошибка при получении APNS токена: $e');
       }
       return null;
     }
@@ -548,7 +530,7 @@ class SdkInitializer {
     return false;
     if (!Platform.isIOS) return false;
 
-    // Check simulator environment variables
+    // Проверяем переменные окружения симулятора
     return Platform.environment.containsKey('SIMULATOR_DEVICE_NAME') ||
         Platform.environment.containsKey('SIMULATOR_HOST_HOME') ||
         Platform.environment.containsKey('SIMULATOR_UDID');
@@ -556,19 +538,6 @@ class SdkInitializer {
 
   static Future<void> pushRequest(BuildContext context) async {
     await Firebase.initializeApp();
-
-    // User tapped "Yes" on our custom screen — now request ATT first,
-    // then the system push notification permission.
-    await _requestATT();
-
-    final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-    if (kDebugMode) {
-      print('Push permission status: ${settings.authorizationStatus}');
-    }
 
     var token = await FirebaseMessagingService.InitPushAndGetToken();
     if (token == null) {
@@ -649,7 +618,7 @@ Map<String, dynamic> parseJsonFromString(String jsonString) {
   if (kDebugMode) {
     print("2 " + cleanedString);
   }
-  // Parse JSON string into Map
+  // Парсим JSON строку в Map
   Map<String, dynamic> jsonMap = jsonDecode(cleanedString);
 
   // print("3 " + jsonMap.length.toString());
@@ -658,12 +627,12 @@ Map<String, dynamic> parseJsonFromString(String jsonString) {
 
 String mapToJsonString(Map<String, dynamic> map) {
   try {
-    // Convert Map to JSON string with formatting
+    // Преобразуем Map в JSON строку с красивым форматированием
     String jsonString = json.encode(map);
     return jsonString;
   } catch (e) {
     if (kDebugMode) {
-      print('Error converting to JSON: $e');
+      print('Ошибка преобразования в JSON: $e');
     }
     return '{}';
   }
@@ -679,25 +648,25 @@ Future<Map<String, dynamic>?> sendPostRequest({
     print(body);
   }
   try {
-    // Prepare headers
+    // Подготавливаем заголовки
     Map<String, String> requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       ...?headers,
     };
 
-    // Send POST request
+    // Отправляем POST запрос
     http.Response response = await http
         .post(Uri.parse(url), headers: requestHeaders, body: json.encode(body))
         .timeout(timeout);
 
-    // Check response status
+    // Проверяем статус ответа
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      // Success response
+      // Успешный ответ
       Map<String, dynamic> result = json.decode(response.body);
       return result;
     } else {
-      // HTTP error
+      // Ошибка HTTP
       if (kDebugMode) {
         print('HTTP Error: ${response.statusCode} - ${response.body}');
       }
@@ -705,32 +674,32 @@ Future<Map<String, dynamic>?> sendPostRequest({
     }
   } catch (e) {
     if (kDebugMode) {
-      print('Request error: $e');
+      print('Ошибка запроса: $e');
     }
     return null;
   }
 }
 
 class EventBus {
-  // Event controller
+  // Контроллер для событий
   final _controller = StreamController<dynamic>.broadcast();
 
   // Singleton instance
   static final EventBus instance = EventBus();
 
-  // Private constructor (if you want to prevent instantiation)
-  // EventBus._(); // or just don't declare a public constructor
+  // Приватный конструктор (если хотите запретить создание экземпляров)
+  // EventBus._(); // или просто не объявляйте public конструктор
 
-  // Event stream
+  // Поток событий
   Stream<dynamic> get events => _controller.stream;
 
-  // Emit event
+  // Отправка события
   void fire(dynamic event) {
     print(event);
     _controller.add(event);
   }
 
-  // Dispose
+  // Закрытие
   void dispose() {
     _controller.close();
   }
