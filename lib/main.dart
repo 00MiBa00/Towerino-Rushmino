@@ -1,17 +1,21 @@
 import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/services/sdk_initializer.dart';
 import 'firebase_options.dart';
 import 'package:flutter/cupertino.dart';
 import 'core/screens/splash_screen.dart';
+import 'src/data/datasources/task_local_datasource.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   initTrackingAppTransparency();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Hive.initFlutter();
+  await Hive.openBox<String>(TaskLocalDataSource.boxName);
   SdkInitializer.prefs = await SharedPreferences.getInstance();
   await SdkInitializer.loadRuntimeStorageToDevice();
   var isFirstStart = !SdkInitializer.hasValue("isFirstStart");
