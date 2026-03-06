@@ -155,11 +155,20 @@ class SdkInitializer {
       NoInternetConnectionScreen.showIfNoInternet(context);
       return;
     }
-    prefs = await SharedPreferences.getInstance();
-    await loadRuntimeStorageToDevice();
+
+    // prefs и runtimeStorage уже загружены в main.dart,
+    // повторная загрузка может очистить _runtimeStorage при ошибке
+    if (prefs == null) {
+      prefs = await SharedPreferences.getInstance();
+      await loadRuntimeStorageToDevice();
+    }
 
     if (hasValue("pushRequestData")) {
-      pushRequestData = PushRequestData.fromJson(getValue("pushRequestData"));
+      try {
+        pushRequestData = PushRequestData.fromJson(getValue("pushRequestData"));
+      } catch (_) {
+        pushRequestData = PushRequestData();
+      }
     } else {
       pushRequestData = PushRequestData();
       //print("new PushRequestData");
@@ -169,8 +178,15 @@ class SdkInitializer {
     var isFirstStart = !hasValue("isFirstStart");
     if (!isFirstStart) {
       var isOrganic = getValue("Organic");
-      if (!isOrganic) {
-        Map<String, dynamic> conversion = getValue("conversionData");
+      if (isOrganic != true) {
+        final dynamic rawConversion = getValue("conversionData");
+        if (rawConversion == null || rawConversion is! Map) {
+          // conversionData недоступна — переходим в приложение
+          showApp(context);
+          return;
+        }
+        final Map<String, dynamic> conversion =
+            Map<String, dynamic>.from(rawConversion as Map);
         if (kDebugMode) {
           print(conversion);
         }
@@ -199,11 +215,8 @@ class SdkInitializer {
       return;
     }
 
-    // WidgetsFlutterBinding.ensureInitialized().addPostFrameCallback((_) async {
-    //   final status =
-    //       await AppTrackingTransparency.requestTrackingAuthorization();
-    // });
-    //initAppsFlyer();
+    // Первый запуск: навигация произойдёт из callback AppsFlyer (onEndRequest)
+    // initAppsFlyer уже вызван в main.dart
   }
 
   static Future<void> _firebaseMessagingBackgroundHandler(
@@ -536,42 +549,67 @@ class SdkInitializer {
   }
 
   static Future<void> pushRequest(BuildContext context) async {
-    await Firebase.initializeApp();
-
-    var token = await FirebaseMessagingService.InitPushAndGetToken();
-    if (token == null) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const WebViewScreen()),
-        (route) => false,
+    // Сначала запрашиваем разрешение через системный диалог iOS
+    String? token;
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
       );
-      return;
+
+      if (kDebugMode) {
+        print('Push permission: ${settings.authorizationStatus}');
+      }
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional) {
+        // Ждём APNS-токен с повторными попытками
+        for (int i = 0; i < 15; i++) {
+          token = await FirebaseMessaging.instance.getAPNSToken();
+          if (token != null && token.isNotEmpty) break;
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+
+        if (kDebugMode) {
+          print('APNS token: $token');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Push permission error: $e');
+      }
     }
 
-    PushRequestControl.acceptPushRequest(pushRequestData!);
+    if (!context.mounted) return;
 
-    setValue("pushRequestData", pushRequestData?.toJson());
-    _convrtsion = SdkInitializer.getValue('conversionData');
-    if (_convrtsion is Map<String, dynamic>) {
-      if (kDebugMode) {
-        print("makeConversion 2");
+    if (token != null) {
+      PushRequestControl.acceptPushRequest(pushRequestData!);
+      setValue("pushRequestData", pushRequestData?.toJson());
+
+      _convrtsion = SdkInitializer.getValue('conversionData');
+      if (_convrtsion is Map<String, dynamic>) {
+        if (kDebugMode) {
+          print("makeConversion 2");
+        }
+        final url = await SdkInitializer.secondMakeConversion(
+          Map<String, dynamic>.from(_convrtsion),
+          apnsToken: token,
+          isLoad: false,
+        );
+        _runtimeStorage['receivedUrl'] = url;
       }
-      var url = await SdkInitializer.secondMakeConversion(
-        _convrtsion,
-        apnsToken: token,
-        isLoad: false,
-      );
-      setValue(url, "receivedUrl");
-      if (kDebugMode) {
-        print("pushRequest ");
-      }
-      _runtimeStorage['receivedUrl'] = url;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const WebViewScreen()),
-        (route) => false,
-      );
+    } else {
+      // Пользователь отказал — сохраняем отказ
+      SdkInitializer.pushRequestDecline();
     }
+
+    if (!context.mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const WebViewScreen()),
+      (route) => false,
+    );
   }
 
   static Future<String> secondMakeConversion(

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../app_config.dart';
@@ -18,12 +19,18 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _initializeApp() async {
-    await SdkInitializer.initAll(context);
+    try {
+      await SdkInitializer.initAll(context);
+    } catch (e) {
+      if (kDebugMode) {
+        print('SdkInitializer.initAll error: $e');
+      }
+      if (!mounted) return;
+      // Fallback: показываем приложение даже при ошибке инициализации
+      SdkInitializer.showApp(context);
+    }
     // await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
-    // Navigator.of(context).pushReplacement(
-    //   MaterialPageRoute(builder: (context) => const MainScreen()),
-    // );
   }
 
   @override
