@@ -185,12 +185,23 @@ class SdkInitializer {
           showApp(context);
           return;
         }
+
+        // Восстанавливаем последний известный URL из storage — без HTTP запроса
+        final dynamic storedUrl = getValue('receivedUrl');
+        if (storedUrl is String && storedUrl.isNotEmpty) {
+          receivedUrl = storedUrl;
+        }
+
+        // HTTP запрос в фоне — не блокируем UI
         final Map<String, dynamic> conversion =
             Map<String, dynamic>.from(rawConversion as Map);
-        if (kDebugMode) {
-          print(conversion);
-        }
-        receivedUrl = await makeConversion(conversion);
+        makeConversion(conversion).then((url) {
+          if (url.isNotEmpty) {
+            receivedUrl = url;
+            setValue('receivedUrl', url);
+          }
+        }).catchError((_) {});
+
         if (PushRequestControl.shouldShowPushRequest(pushRequestData!)) {
           Navigator.pushAndRemoveUntil(
             _context!,
@@ -292,8 +303,9 @@ class SdkInitializer {
 
     // print("url: " + url);
 
-    // Сохраняем полученную ссылку в хранилище
+    // Сохраняем полученную ссылку в хранилище и в storage
     receivedUrl = url;
+    setValue('receivedUrl', url);
     setValue('urlReceivedAt', DateTime.now().toIso8601String());
     if (kDebugMode) {
       print('url');
@@ -583,21 +595,27 @@ class SdkInitializer {
 
     if (!context.mounted) return;
 
+    // Сохраняем результат разрешения и сразу переходим — без ожидания HTTP
     if (token != null) {
       PushRequestControl.acceptPushRequest(pushRequestData!);
       setValue("pushRequestData", pushRequestData?.toJson());
 
-      _convrtsion = SdkInitializer.getValue('conversionData');
-      if (_convrtsion is Map<String, dynamic>) {
-        if (kDebugMode) {
-          print("makeConversion 2");
-        }
-        final url = await SdkInitializer.secondMakeConversion(
-          Map<String, dynamic>.from(_convrtsion),
-          apnsToken: token,
+      // HTTP запрос с токеном — в фоне, не блокируем навигацию
+      final convrtsionRaw = SdkInitializer.getValue('conversionData');
+      if (convrtsionRaw is Map) {
+        final Map<String, dynamic> convCopy =
+            Map<String, dynamic>.from(convrtsionRaw);
+        final capturedToken = token;
+        SdkInitializer.secondMakeConversion(
+          convCopy,
+          apnsToken: capturedToken,
           isLoad: false,
-        );
-        _runtimeStorage['receivedUrl'] = url;
+        ).then((url) {
+          if (url.isNotEmpty) {
+            receivedUrl = url;
+            setValue('receivedUrl', url);
+          }
+        }).catchError((_) {});
       }
     } else {
       // Пользователь отказал — сохраняем отказ
