@@ -1,6 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:ice_wave_app/core/screens/webview_screen.dart';
+import '../screens/webview_screen.dart';
 
 import 'local_notifications_service.dart';
 import 'sdk_initializer.dart';

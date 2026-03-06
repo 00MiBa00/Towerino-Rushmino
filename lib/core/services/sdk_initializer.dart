@@ -4,7 +4,6 @@ import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:appsflyer_sdk/appsflyer_sdk.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:ice_wave_app/app.dart';
 import '../../app/clear_app.dart';
 import '../../firebase_options.dart';
 import '../app_config.dart';
@@ -117,7 +116,7 @@ class SdkInitializer {
   static void showApp(BuildContext context) {
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const MainApp()),
+      MaterialPageRoute(builder: (context) => const ClearApp()),
       (route) => false,
     );
   }
