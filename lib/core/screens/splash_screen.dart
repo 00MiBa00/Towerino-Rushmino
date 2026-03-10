@@ -26,11 +26,29 @@ class _SplashScreenState extends State<SplashScreen> {
         print('SdkInitializer.initAll error: $e');
       }
       if (!mounted) return;
-      // Fallback: показываем приложение даже при ошибке инициализации
       SdkInitializer.showApp(context);
+      return;
     }
-    // await Future.delayed(const Duration(seconds: 1));
+
     if (!mounted) return;
+
+    // initAll вернулся без навигации — это ожидаемо только при первом запуске
+    // (ждём AppsFlyer callback). Если это НЕ первый запуск — навигация не случилась
+    // по какой-то причине, делаем fallback.
+    final isFirstStart = !SdkInitializer.hasValue("isFirstStart");
+    if (!isFirstStart) {
+      if (kDebugMode) {
+        print('Fallback navigation triggered on restart');
+      }
+      final storedUrl = SdkInitializer.getValue('receivedUrl');
+      if (storedUrl is String && storedUrl.isNotEmpty) {
+        SdkInitializer.receivedUrl = storedUrl;
+        SdkInitializer.showWeb(context);
+      } else {
+        SdkInitializer.showApp(context);
+      }
+    }
+    // Если первый запуск — ждём onEndRequest от AppsFlyer
   }
 
   @override

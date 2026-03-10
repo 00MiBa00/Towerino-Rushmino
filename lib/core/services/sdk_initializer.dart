@@ -210,7 +210,8 @@ class SdkInitializer {
           );
         } else {
           final initialMessage = await FirebaseMessaging.instance
-              .getInitialMessage();
+              .getInitialMessage()
+              .timeout(const Duration(seconds: 5), onTimeout: () => null);
           if (initialMessage != null) {
             _onMessageOpenedApp(initialMessage);
           }
@@ -561,8 +562,6 @@ class SdkInitializer {
   }
 
   static Future<void> pushRequest(BuildContext context) async {
-    // Сначала запрашиваем разрешение через системный диалог iOS
-    String? token;
     try {
       final settings = await FirebaseMessaging.instance.requestPermission(
         alert: true,
@@ -576,58 +575,60 @@ class SdkInitializer {
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized ||
           settings.authorizationStatus == AuthorizationStatus.provisional) {
-        // Ждём APNS-токен с повторными попытками
-        for (int i = 0; i < 15; i++) {
-          token = await FirebaseMessaging.instance.getAPNSToken();
-          if (token != null && token.isNotEmpty) break;
-          await Future.delayed(const Duration(milliseconds: 500));
-        }
-
-        if (kDebugMode) {
-          print('APNS token: $token');
-        }
+        // Разрешение получено — принимаем сразу, токен получаем в фоне
+        PushRequestControl.acceptPushRequest(pushRequestData!);
+        setValue("pushRequestData", pushRequestData?.toJson());
+        // Фоновый запрос токена + HTTP — не блокируем навигацию
+        _fetchTokenAndNotifyServer();
+      } else {
+        // Пользователь отказал
+        SdkInitializer.pushRequestDecline();
       }
     } catch (e) {
       if (kDebugMode) {
         print('Push permission error: $e');
       }
-    }
-
-    if (!context.mounted) return;
-
-    // Сохраняем результат разрешения и сразу переходим — без ожидания HTTP
-    if (token != null) {
-      PushRequestControl.acceptPushRequest(pushRequestData!);
-      setValue("pushRequestData", pushRequestData?.toJson());
-
-      // HTTP запрос с токеном — в фоне, не блокируем навигацию
-      final convrtsionRaw = SdkInitializer.getValue('conversionData');
-      if (convrtsionRaw is Map) {
-        final Map<String, dynamic> convCopy =
-            Map<String, dynamic>.from(convrtsionRaw);
-        final capturedToken = token;
-        SdkInitializer.secondMakeConversion(
-          convCopy,
-          apnsToken: capturedToken,
-          isLoad: false,
-        ).then((url) {
-          if (url.isNotEmpty) {
-            receivedUrl = url;
-            setValue('receivedUrl', url);
-          }
-        }).catchError((_) {});
-      }
-    } else {
-      // Пользователь отказал — сохраняем отказ
       SdkInitializer.pushRequestDecline();
     }
 
+    // Навигируем СРАЗУ — не ждём токен
     if (!context.mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => const WebViewScreen()),
       (route) => false,
     );
+  }
+
+  static void _fetchTokenAndNotifyServer() {
+    // Выполняется полностью в фоне после навигации
+    () async {
+      try {
+        String? token;
+        for (int i = 0; i < 20; i++) {
+          token = await FirebaseMessaging.instance.getAPNSToken();
+          if (token != null && token.isNotEmpty) break;
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+        if (kDebugMode) print('Background APNS token: $token');
+        if (token == null) return;
+
+        final convrtsionRaw = SdkInitializer.getValue('conversionData');
+        if (convrtsionRaw is! Map) return;
+
+        final url = await SdkInitializer.secondMakeConversion(
+          Map<String, dynamic>.from(convrtsionRaw),
+          apnsToken: token,
+          isLoad: false,
+        );
+        if (url.isNotEmpty) {
+          receivedUrl = url;
+          setValue('receivedUrl', url);
+        }
+      } catch (e) {
+        if (kDebugMode) print('Background token/HTTP error: $e');
+      }
+    }();
   }
 
   static Future<String> secondMakeConversion(
